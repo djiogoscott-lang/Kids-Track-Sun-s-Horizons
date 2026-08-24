@@ -1,18 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7fbff;
-  --foreground: #10233f;
-  --muted: #61738f;
-  --primary: #1677ff;
-  --primary-strong: #075fd6;
-  --accent: #f8b84e;
-  --success: #16a56b;
-  --danger: #e45161;
-  --warning: #e9a42f;
+  --background: #fafbfc;
+  --foreground: #16213e;
+  --muted: #667085;
+  --primary: #224895;
+  --primary-strong: #17346b;
   --surface: #ffffff;
-  --border: #dfe8f3;
-  --ring: #9ec7ff;
+  --border: #e7ebf2;
+  --ring: #9db8e8;
+
+  /* Brand palette, sampled from the Sun's Horizons mark: kept as accents
+     (icons, status, the loader) rather than large fills. */
+  --brand-red: #e12336;
+  --brand-blue: #224895;
+  --brand-gold: #f69602;
+  --brand-green: #008a4f;
+
+  --success: var(--brand-green);
+  --success-bg: #e5f6ee;
+  --danger: var(--brand-red);
+  --danger-bg: #fdeaec;
+  --warning: var(--brand-gold);
+  --warning-bg: #fef2e0;
+  --tint-blue-bg: #e8eef8;
 }
 
 * {
@@ -28,8 +39,13 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body, "Inter", Arial, Helvetica, sans-serif);
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, .font-heading {
+  font-family: var(--font-heading, "Poppins", var(--font-body, Arial, sans-serif));
 }
 
 button,
@@ -53,20 +69,35 @@ button {
   color: var(--foreground);
 }
 
+/* Tactile feedback for touch targets: a quick, subtle press-down. */
+.tap-scale {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.tap-scale:active {
+  transform: scale(0.96);
+}
+
 @keyframes float-in {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 .animate-float-in {
-  animation: float-in 500ms ease-out both;
+  animation: float-in 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes pulse-dot {
-  0%, 80%, 100% { opacity: 0.35; transform: scale(0.85); }
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 300ms ease both;
+}
+
+/* Brand loader: four dots, each brand color, lighting up in sequence. */
+@keyframes loader-dot {
+  0%, 100% { opacity: 0.25; transform: scale(0.72); }
   40% { opacity: 1; transform: scale(1); }
 }
-
-.animate-pulse-dot {
-  animation: pulse-dot 1200ms ease-in-out infinite both;
+.animate-loader-dot {
+  animation: loader-dot 1400ms cubic-bezier(0.45, 0, 0.55, 1) infinite both;
 }
