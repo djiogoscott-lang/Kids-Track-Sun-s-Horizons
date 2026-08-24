@@ -1,3 +1,4 @@
+import { getActivityIdForMonitor } from "@/features/presence/application/queries";
 import { signInDemoAction } from "@/lib/auth/actions";
 import { ACTIVITIES, DEMO_USERS } from "@/server/demo/data";
 
@@ -8,7 +9,8 @@ const ROLE_LABEL: Record<string, string> = {
 
 function description(user: (typeof DEMO_USERS)[number]): string {
   if (user.role === "ADMIN") return "Vue d'ensemble des 4 activités.";
-  const activity = ACTIVITIES.find((a) => a.monitorId === user.id);
+  const activityId = getActivityIdForMonitor(user.id);
+  const activity = ACTIVITIES.find((a) => a.id === activityId);
   return activity ? `Appel et départ — ${activity.name}` : "";
 }
 
