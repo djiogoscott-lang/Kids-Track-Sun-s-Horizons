@@ -1,18 +1,21 @@
-import { Bell, LayoutDashboard, Shuffle, Trophy, Users2 } from "lucide-react";
+import { Bell, ClipboardCheck, DoorOpen, Home, Shuffle, Trophy, Users2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { SunsHorizonsMark } from "@/components/brand/suns-horizons-mark";
 import { MonitorTabBar } from "@/components/layout/monitor-tab-bar";
-import { getActivityIdForMonitor } from "@/features/presence/application/queries";
+import { NotificationsProvider } from "@/features/notifications/notifications-provider";
+import { getActivityIdForMonitor, getNotificationsForMonitor } from "@/features/presence/application/queries";
 import { signOutAction } from "@/lib/auth/actions";
 import { getCurrentUser } from "@/lib/auth/session";
 
 const ADMIN_LINKS = [
-  { href: "/admin/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/admin/children", label: "Enfants", icon: Users2 },
   { href: "/activities", label: "Activités", icon: Trophy },
   { href: "/admin/monitors", label: "Moniteurs", icon: Shuffle },
+  { href: "/admin/presences", label: "Présences", icon: ClipboardCheck },
+  { href: "/admin/departures", label: "Départs", icon: DoorOpen },
+  { href: "/garderie", label: "Garderie", icon: Home },
   { href: "/admin/notifications", label: "Notifications", icon: Bell },
 ];
 
@@ -21,8 +24,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect("/login");
 
   const monitorActivityId = user.role === "MONITOR" ? getActivityIdForMonitor(user.id) : null;
+  const initialNotifications =
+    user.role === "MONITOR" && monitorActivityId
+      ? getNotificationsForMonitor(monitorActivityId).map((n) => ({
+          id: n.id,
+          message: n.message,
+          createdAt: n.createdAt,
+          createdBy: n.createdBy,
+          read: n.read,
+        }))
+      : [];
 
-  return (
+  const shell = (
     <div className="min-h-screen bg-[var(--background)]">
       <header className="border-b border-[var(--border)] bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
@@ -84,4 +97,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ) : null}
     </div>
   );
+
+  if (user.role === "MONITOR") {
+    return <NotificationsProvider initialNotifications={initialNotifications}>{shell}</NotificationsProvider>;
+  }
+  return shell;
 }
