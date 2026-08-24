@@ -17,7 +17,7 @@ Application SaaS de gestion des présences des enfants.
 2. Installer les dépendances : `npm install`
 3. Copier `.env.example` vers `.env.local`.
 4. Renseigner les variables Supabase.
-5. Appliquer `supabase/migrations/20260824110000_foundation.sql` dans le SQL Editor Supabase.
+5. Appliquer `supabase/migrations/20260824120000_foundation.sql` dans le SQL Editor Supabase.
 6. Lancer : `npm run dev`
 
 ## Vérifications
