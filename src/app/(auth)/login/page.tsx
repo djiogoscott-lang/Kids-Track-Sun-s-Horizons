@@ -11,16 +11,16 @@ export default async function LoginPage() {
   if (user) redirect(await resolveHomePath(user));
 
   return (
-    <main className="min-h-screen bg-[var(--background)] px-6 py-12">
-      <div className="mx-auto flex min-h-[80vh] max-w-md items-center justify-center">
-        <Card className="w-full overflow-hidden">
-          <div className="flex flex-col items-center bg-white px-6 pb-3 pt-8 text-center">
-            <SunsHorizonsMark className="h-14 w-14" />
-            <p className="mt-4 text-xs font-bold uppercase tracking-[0.2em] text-[var(--primary)]">Sun’s Horizons</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight">Kids Track</h1>
-            <p className="mt-2 text-sm text-[var(--muted)]">Accédez à votre espace de gestion.</p>
+    <main className="relative min-h-screen overflow-hidden bg-[var(--background)] px-6 py-12">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,72,149,0.06),transparent_45%)]" />
+      <div className="relative mx-auto flex min-h-[80vh] max-w-md items-center justify-center">
+        <Card className="w-full overflow-hidden animate-float-in">
+          <div className="flex flex-col items-center bg-white px-6 pb-2 pt-10 text-center">
+            <SunsHorizonsMark className="h-20 w-20" />
+            <h1 className="font-heading mt-5 text-2xl font-bold tracking-tight text-[var(--foreground)]">Bienvenue</h1>
+            <p className="mt-1.5 text-sm text-[var(--muted)]">Accédez à votre espace de gestion.</p>
           </div>
-          <CardContent>{isSupabaseConfigured ? <LoginForm /> : <DemoLoginOptions />}</CardContent>
+          <CardContent className="pt-6">{isSupabaseConfigured ? <LoginForm /> : <DemoLoginOptions />}</CardContent>
         </Card>
       </div>
     </main>
