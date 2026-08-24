@@ -11,6 +11,7 @@ Le logo et les couleurs viennent du vrai site (sunshorizons.be), pas d'une ident
 - **Logo** : `public/logo.png`, utilisé sur l'écran de connexion et dans l'en-tête — c'est la marque officielle, jamais un texte ou un symbole de substitution.
 - **Favicon** : `src/app/icon.png` / `apple-icon.png` reprennent le symbole du site (Next.js génère les balises `<link rel="icon">` automatiquement).
 - **Palette** : les quatre couleurs d'accent (rouge, bleu, or, vert — voir `src/app/globals.css`) sont échantillonnées directement depuis le favicon officiel, pas choisies au hasard. Elles servent à la fois de couleurs de statut (présent/absent/garderie) et d'identité par activité (Danse/Multisport/Vélo/Baby Tennis), et retrouvent les quatre points colorés du chargement.
+- **Violet et jaune** viennent, eux, du dégradé de couleurs du vrai site (sunshorizons.be) et complètent la palette avec un rôle précis chacun : le violet marque les éléments secondaires (points de progression du guide de découverte), le jaune signale un élément important (le sous-compte "issus des départs" sur la carte Garderie). Aucune des six couleurs n'est utilisée "pour faire joli" — chacune a une seule fonction, toujours la même.
 - **Chargement** : un loader à quatre points (les mêmes couleurs) qui s'allument en séquence, sans aucun texte technique — jamais "Compiling"/"Building", y compris le badge de développement Next.js, désactivé (`devIndicators: false`).
 
 ## Le problème
@@ -48,8 +49,9 @@ Le moniteur dispose d'un bouton **✓ Clôturer la séance**, protégé par une 
 
 **Côté moniteur** (interface volontairement réduite à l'essentiel) :
 - Connexion en un clic (compte de démonstration par moniteur), arrivée directe sur son activité — aucune liste à choisir.
-- Présences, Départs, Garderie, Notifications : quatre écrans, pas un de plus, en barre d'onglets fixe en bas d'écran (une main sur le téléphone, l'autre pour l'appel).
+- **Accueil** (nouvel écran d'atterrissage), Présences, Départs, Garderie, Notifications : cinq écrans, pas un de plus, en barre d'onglets fixe en bas d'écran (une main sur le téléphone, l'autre pour l'appel). Présence et Départs restent les deux actions les plus grandes et les plus visibles de l'écran d'accueil — voir [Écran d'accueil & barre de situation](#écran-daccueil--barre-de-situation).
 - Compteurs en direct qui se mettent à jour immédiatement, et un badge de notification qui apparaît sans recharger la page — voir [Temps réel](#temps-réel).
+- Un guide de découverte interactif à la première connexion, rejouable à tout moment — voir [Découverte guidée](#découverte-guidée).
 
 **Côté administrateur** (accès direct, pas de tableau de bord statistique) :
 - Enfants : ajouter, modifier, désactiver, associer à une activité, définir la garderie automatique, ajouter une note libre.
@@ -62,6 +64,14 @@ Le moniteur dispose d'un bouton **✓ Clôturer la séance**, protégé par une 
 Les notifications sont poussées en direct par **Server-Sent Events** (`/api/notifications/stream`), pas par un `setInterval` qui interroge le serveur en boucle : chaque moniteur connecté tient un flux HTTP léger, abonné au canal de sa seule activité, et le navigateur (`EventSource`) se reconnecte tout seul si la connexion tombe. Quand l'administrateur envoie un message, le magasin en mémoire publie l'évènement sur ce canal ; le badge et une notification visuelle apparaissent instantanément chez le moniteur concerné, sans rechargement — et se remettent à zéro dès qu'il ouvre l'écran Notifications. Choisi plutôt qu'un WebSocket (le flux est à sens unique, rien ne le justifie) ou un abonnement de base de données (aucune vraie base branchée pour l'instant).
 
 Les compteurs de présence, eux, se mettaient déjà à jour sans rechargement avant cette passe — c'est le comportement natif des Server Actions + `revalidatePath` de Next.js, pas quelque chose de spécifique aux notifications.
+
+## Écran d'accueil & barre de situation
+
+L'écran d'accueil du moniteur (`/activities/[id]`, sans paramètre `tab`) affiche la date, l'heure, et une **barre de situation** qui indique automatiquement la phase en cours de la journée — accueil, activités en cours, départs, garderie — calculée depuis l'horloge (`features/presence/domain/day-phase.ts`, pure, sans effet de bord, testée aux quatre bornes horaires). En dessous, quatre grandes cartes reprennent les compteurs en direct de Présence, Départs, Garderie (avec ses deux sous-comptes — 🟠 arrivés automatiquement, 🟡 issus des départs) et Notifications ; chacune mène directement à l'écran détaillé correspondant. C'est l'écran vu en premier après connexion, mais les écrans détaillés (appel du matin, gestion des départs) restent inchangés et accessibles via leurs propres onglets.
+
+## Découverte guidée
+
+À la toute première connexion (par utilisateur, via `localStorage`), une visite guidée interactive met en évidence les éléments clés de l'interface un par un — une bulle d'aide positionnée sur l'élément réel, pas un tutoriel séparé en plusieurs pages. Maximum 6 étapes, avec Suivant/Retour/Passer/Terminer et des points de progression. Le contenu diffère selon le rôle : le moniteur voit Présence, Départs, Garderie et Notifications ; l'administrateur voit ses sept sections regroupées en quatre étapes de contenu (Enfants & Activités, Moniteurs, Présences & Départs, Garderie & Notifications) pour rester sous la limite. Le guide peut être rejoué à tout moment via le bouton **?** dans l'en-tête → "Revoir le guide" (`features/onboarding/`). Un petit "💡 Conseil" ponctuel, dismissible et qui ne revient plus une fois fermé, complète la découverte sur l'écran de présence (`components/ui/dismissible-tip.tsx`).
 
 ## Démo aujourd'hui → données réelles demain
 
@@ -101,16 +111,17 @@ src/
         notifications/       Composer et historique des messages envoyés
     api/notifications/stream/ Route SSE : pousse les notifications en direct
   components/
-    ui/                      Boutons, cartes, états vides, loader — primitives génériques
+    ui/                      Boutons, cartes, états vides, loader, conseil dismissible — primitives génériques
     auth/                    Formulaire de connexion réel + options de connexion démo
     brand/                   Identité visuelle Sun’s Horizons
-    layout/                  Barre d'onglets mobile du moniteur
+    layout/                  Barre d'onglets mobile du moniteur (5 onglets, dont Accueil)
   features/
-    notifications/           Contexte client (liste + badge live) + abonnement SSE
+    notifications/           Contexte client (liste + badge live) + abonnement SSE + carte d'aperçu Accueil
+    onboarding/               Guide de découverte : étapes par rôle, overlay coach-mark, bouton "?"
     presence/
-      domain/                Logique pure : arrivé/parti, statut Garderie, raison Garderie
+      domain/                Logique pure : arrivé/parti, statut Garderie, raison Garderie, phase du jour
       application/           Commandes (CRUD enfants, présence, clôture, notifications) et requêtes
-      ui/                    Lignes enfant, onglets, compteurs, icônes d'activité, formulaires d'administration
+      ui/                    Écran Accueil (barre de situation + cartes), lignes enfant, onglets, compteurs, icônes d'activité, formulaires d'administration
   server/
     demo/                    Données et état en mémoire (V0.1) : enfants, présences, clôtures, notifications + bus d'évènements
   lib/
@@ -159,7 +170,7 @@ Un moniteur qui tente d'accéder à l'URL d'une autre activité que la sienne es
 
 ## Tests
 
-`npm test` couvre : le calcul du statut Garderie avant/à/après 16h15 et selon la clôture, la distinction garderie prévue / garderie après séance, les commandes de présence (arrivée, absence qui efface un départ existant, départ refusé sans arrivée préalable, annulation d'un départ), l'échange d'assignation moniteur ↔ activité, et le bus de notifications (comptage des non-lus par activité, remise à zéro à la lecture, cloisonnement entre activités, abonnement/désabonnement aux évènements).
+`npm test` couvre : le calcul du statut Garderie avant/à/après 16h15 et selon la clôture, la distinction garderie prévue / garderie après séance, les commandes de présence (arrivée, absence qui efface un départ existant, départ refusé sans arrivée préalable, annulation d'un départ), l'échange d'assignation moniteur ↔ activité, le bus de notifications (comptage des non-lus par activité, remise à zéro à la lecture, cloisonnement entre activités, abonnement/désabonnement aux évènements), et le calcul de la phase du jour (accueil/activités/départs/garderie) aux quatre bornes horaires.
 
 ## Limites connues de la V0.1
 
