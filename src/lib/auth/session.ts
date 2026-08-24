@@ -39,6 +39,13 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   };
 }
 
-export function homePathForRole(role: UserRole): string {
-  return role === "ADMIN" ? "/dashboard" : "/sessions";
+/**
+ * A monitor manages exactly one activity, so their home is that activity's
+ * screen directly rather than a list to choose from (see features/presence).
+ */
+export async function resolveHomePath(user: CurrentUser): Promise<string> {
+  if (user.role === "ADMIN") return "/activities";
+  const { getActivityIdForMonitor } = await import("@/features/presence/application/queries");
+  const activityId = getActivityIdForMonitor(user.id);
+  return activityId ? `/activities/${activityId}` : "/activities";
 }

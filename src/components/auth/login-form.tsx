@@ -26,7 +26,7 @@ export function LoginForm() {
       return;
     }
 
-    router.replace("/dashboard");
+    router.replace("/activities");
     router.refresh();
   }
 

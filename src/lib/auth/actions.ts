@@ -3,15 +3,15 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { DEMO_SESSION_COOKIE, encodeDemoSession } from "@/lib/auth/demo-session";
-import { homePathForRole } from "@/lib/auth/session";
+import { resolveHomePath } from "@/lib/auth/session";
 import { isSupabaseConfigured } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
-import { getDemoState } from "@/server/demo/store";
+import { DEMO_USERS } from "@/server/demo/data";
 
 export async function signInDemoAction(userId: string) {
   if (isSupabaseConfigured) return;
 
-  const user = getDemoState().users.find((u) => u.id === userId);
+  const user = DEMO_USERS.find((u) => u.id === userId);
   if (!user) return;
 
   const cookieStore = await cookies();
@@ -22,7 +22,7 @@ export async function signInDemoAction(userId: string) {
     maxAge: 60 * 60 * 12,
   });
 
-  redirect(homePathForRole(user.role));
+  redirect(await resolveHomePath({ id: user.id, name: user.name, role: user.role }));
 }
 
 export async function signOutAction() {

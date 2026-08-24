@@ -3,12 +3,12 @@ import { DemoLoginOptions } from "@/components/auth/demo-login-options";
 import { LoginForm } from "@/components/auth/login-form";
 import { SunsHorizonsMark } from "@/components/brand/suns-horizons-mark";
 import { Card, CardContent } from "@/components/ui/card";
-import { getCurrentUser, homePathForRole } from "@/lib/auth/session";
+import { getCurrentUser, resolveHomePath } from "@/lib/auth/session";
 import { isSupabaseConfigured } from "@/lib/env";
 
 export default async function LoginPage() {
   const user = await getCurrentUser();
-  if (user) redirect(homePathForRole(user.role));
+  if (user) redirect(await resolveHomePath(user));
 
   return (
     <main className="min-h-screen bg-[var(--background)] px-6 py-12">

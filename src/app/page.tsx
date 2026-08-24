@@ -1,10 +1,10 @@
 import { SunsHorizonsMark } from "@/components/brand/suns-horizons-mark";
 import { SplashRedirect } from "@/components/splash-redirect";
-import { getCurrentUser, homePathForRole } from "@/lib/auth/session";
+import { getCurrentUser, resolveHomePath } from "@/lib/auth/session";
 
 export default async function HomePage() {
   const user = await getCurrentUser();
-  const target = user ? homePathForRole(user.role) : "/login";
+  const target = user ? await resolveHomePath(user) : "/login";
 
   return (
     <main className="flex min-h-screen items-center justify-center overflow-hidden bg-[var(--background)] px-6">
