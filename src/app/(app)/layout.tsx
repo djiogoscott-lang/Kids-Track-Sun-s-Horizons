@@ -4,18 +4,21 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { SunsHorizonsMark } from "@/components/brand/suns-horizons-mark";
 import { MonitorTabBar } from "@/components/layout/monitor-tab-bar";
+import { HelpMenu } from "@/features/onboarding/help-menu";
+import { OnboardingProvider } from "@/features/onboarding/onboarding-provider";
+import { ADMIN_STEPS, MONITOR_STEPS } from "@/features/onboarding/steps";
 import { NotificationsProvider } from "@/features/notifications/notifications-provider";
 import { getActivityIdForMonitor, getNotificationsForMonitor } from "@/features/presence/application/queries";
 import { signOutAction } from "@/lib/auth/actions";
 import { getCurrentUser } from "@/lib/auth/session";
 
 const ADMIN_LINKS = [
-  { href: "/admin/children", label: "Enfants", icon: Users2 },
+  { href: "/admin/children", label: "Enfants", icon: Users2, tourId: "nav-children" },
   { href: "/activities", label: "Activités", icon: Trophy },
-  { href: "/admin/monitors", label: "Moniteurs", icon: Shuffle },
-  { href: "/admin/presences", label: "Présences", icon: ClipboardCheck },
+  { href: "/admin/monitors", label: "Moniteurs", icon: Shuffle, tourId: "nav-monitors" },
+  { href: "/admin/presences", label: "Présences", icon: ClipboardCheck, tourId: "nav-presences" },
   { href: "/admin/departures", label: "Départs", icon: DoorOpen },
-  { href: "/garderie", label: "Garderie", icon: Home },
+  { href: "/garderie", label: "Garderie", icon: Home, tourId: "nav-garderie" },
   { href: "/admin/notifications", label: "Notifications", icon: Bell },
 ];
 
@@ -50,6 +53,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 <Link
                   key={link.label}
                   href={link.href}
+                  data-tour={link.tourId}
                   className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
                 >
                   <link.icon size={16} />
@@ -64,6 +68,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <p className="text-sm font-semibold text-[var(--foreground)]">{user.name}</p>
               <p className="text-xs text-[var(--muted)]">{user.role === "ADMIN" ? "Administrateur" : "Moniteur"}</p>
             </div>
+            <HelpMenu />
             <form action={signOutAction}>
               <button
                 type="submit"
@@ -80,6 +85,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <Link
                 key={link.label}
                 href={link.href}
+                data-tour={link.tourId}
                 className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
               >
                 <link.icon size={15} />
@@ -98,8 +104,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     </div>
   );
 
+  const withOnboarding = (
+    <OnboardingProvider userId={user.id} steps={user.role === "ADMIN" ? ADMIN_STEPS : MONITOR_STEPS}>
+      {shell}
+    </OnboardingProvider>
+  );
+
   if (user.role === "MONITOR") {
-    return <NotificationsProvider initialNotifications={initialNotifications}>{shell}</NotificationsProvider>;
+    return <NotificationsProvider initialNotifications={initialNotifications}>{withOnboarding}</NotificationsProvider>;
   }
-  return shell;
+  return withOnboarding;
 }
