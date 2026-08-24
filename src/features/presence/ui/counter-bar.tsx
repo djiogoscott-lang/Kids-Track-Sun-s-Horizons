@@ -1,8 +1,10 @@
 import { cn } from "@/lib/utils";
 
 export function CounterBar({
+  title,
   items,
 }: {
+  title?: string;
   items: { value: number; label: string; tone?: "default" | "success" | "danger" | "warning" | "primary" }[];
 }) {
   const toneClass: Record<string, string> = {
@@ -14,16 +16,18 @@ export function CounterBar({
   };
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-3">
-      {items.map((item) => (
-        <div
-          key={item.label}
-          className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3.5 text-center shadow-[0_1px_2px_rgba(16,33,62,0.03)] sm:flex-1"
-        >
-          <p className={cn("font-heading text-2xl font-bold tabular-nums", toneClass[item.tone ?? "default"])}>{item.value}</p>
-          <p className="mt-0.5 text-xs font-semibold uppercase tracking-[0.06em] text-[var(--muted)]">{item.label}</p>
-        </div>
-      ))}
+    <div className="rounded-3xl border border-[var(--border)] bg-white p-4 shadow-[0_1px_2px_rgba(16,33,62,0.03)] sm:p-5">
+      {title ? <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[var(--muted)]">{title}</p> : null}
+      <div className="grid grid-cols-2 gap-3 sm:flex">
+        {items.map((item) => (
+          <div key={item.label} className="text-center sm:flex-1">
+            <p className={cn("font-heading text-4xl font-extrabold leading-none tabular-nums sm:text-5xl", toneClass[item.tone ?? "default"])}>
+              {item.value}
+            </p>
+            <p className="mt-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-[var(--muted)] sm:text-sm">{item.label}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

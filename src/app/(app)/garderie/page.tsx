@@ -1,3 +1,4 @@
+import { Home } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDaycareList } from "@/features/presence/application/queries";
@@ -12,10 +13,18 @@ export default async function GarderiePage() {
   const children = getDaycareList(now);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">🏠 Garderie</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">Situation à {formatTime(now)}, toutes activités confondues.</p>
+    <div className="animate-float-in space-y-6">
+      <div className="flex items-center gap-3">
+        <span
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl"
+          style={{ backgroundColor: "var(--tint-blue-bg)", color: "var(--brand-blue)" }}
+        >
+          <Home size={24} strokeWidth={2} />
+        </span>
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Garderie</h1>
+          <p className="text-sm text-[var(--muted)]">Situation à {formatTime(now)}, toutes activités confondues.</p>
+        </div>
       </div>
 
       <CounterBar items={[{ value: children.length, label: "Enfants actuellement présents", tone: "primary" }]} />

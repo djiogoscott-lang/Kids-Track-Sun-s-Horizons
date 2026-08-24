@@ -55,6 +55,7 @@ export default async function ActivityDetailPage({
         morning={
           <div className="space-y-4">
             <CounterBar
+              title="Présence du jour"
               items={[
                 { value: activity.morningCounters.total, label: "Enfants" },
                 { value: activity.morningCounters.arrivedCount, label: "Arrivés", tone: "success" },
@@ -64,7 +65,7 @@ export default async function ActivityDetailPage({
             {activity.morningList.length === 0 ? (
               <EmptyState title="Aucun enfant sur cette activité." />
             ) : (
-              <ul className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
+              <ul className="overflow-hidden rounded-3xl border border-[var(--border)] bg-white">
                 {activity.morningList.map((child) => (
                   <ChildMorningRow key={child.childId} activityId={id} child={child} locked={activity.closed} />
                 ))}
@@ -75,6 +76,7 @@ export default async function ActivityDetailPage({
         evening={
           <div className="space-y-4">
             <CounterBar
+              title="Départs"
               items={[
                 { value: activity.eveningCounters.presentTotal, label: "Présents" },
                 { value: activity.eveningCounters.leftCount, label: "Partis", tone: "success" },
@@ -87,7 +89,7 @@ export default async function ActivityDetailPage({
                 description="La liste se remplit avec les enfants arrivés qui ne sont pas inscrits en garderie automatique."
               />
             ) : (
-              <ul className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
+              <ul className="overflow-hidden rounded-3xl border border-[var(--border)] bg-white">
                 {activity.eveningList.map((child) => (
                   <ChildEveningRow key={child.childId} activityId={id} child={child} locked={activity.closed} />
                 ))}
