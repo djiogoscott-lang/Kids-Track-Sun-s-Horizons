@@ -3,8 +3,16 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-export function ActivityTabs({ morning, evening }: { morning: React.ReactNode; evening: React.ReactNode }) {
-  const [tab, setTab] = useState<"morning" | "evening">("morning");
+export function ActivityTabs({
+  morning,
+  evening,
+  defaultTab = "morning",
+}: {
+  morning: React.ReactNode;
+  evening: React.ReactNode;
+  defaultTab?: "morning" | "evening";
+}) {
+  const [tab, setTab] = useState<"morning" | "evening">(defaultTab);
 
   return (
     <div>
@@ -19,7 +27,7 @@ export function ActivityTabs({ morning, evening }: { morning: React.ReactNode; e
             tab === "morning" ? "bg-[var(--primary)] text-white" : "border-2 border-[var(--border)] bg-white text-[var(--muted)]",
           )}
         >
-          ☀️ Appel
+          ☀️ Présences
         </button>
         <button
           type="button"
@@ -31,7 +39,7 @@ export function ActivityTabs({ morning, evening }: { morning: React.ReactNode; e
             tab === "evening" ? "bg-[var(--primary)] text-white" : "border-2 border-[var(--border)] bg-white text-[var(--muted)]",
           )}
         >
-          🌙 Départ
+          🌙 Départs
         </button>
       </div>
       <div role="tabpanel">{tab === "morning" ? morning : evening}</div>

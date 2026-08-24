@@ -5,7 +5,15 @@ import { markLeftAction, markStillPresentAction } from "@/features/presence/ui/a
 import { cn } from "@/lib/utils";
 import type { ChildEveningRow } from "@/features/presence/application/queries";
 
-export function ChildEveningRow({ activityId, child }: { activityId: string; child: ChildEveningRow }) {
+export function ChildEveningRow({
+  activityId,
+  child,
+  locked = false,
+}: {
+  activityId: string;
+  child: ChildEveningRow;
+  locked?: boolean;
+}) {
   const [status, setStatus] = useState(child.status);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +46,7 @@ export function ChildEveningRow({ activityId, child }: { activityId: string; chi
       <div className="flex gap-2">
         <button
           type="button"
-          disabled={isPending}
+          disabled={isPending || locked}
           onClick={() => act(markLeftAction, "LEFT")}
           aria-pressed={status === "LEFT"}
           className={cn(
@@ -50,7 +58,7 @@ export function ChildEveningRow({ activityId, child }: { activityId: string; chi
         </button>
         <button
           type="button"
-          disabled={isPending}
+          disabled={isPending || locked}
           onClick={() => act(markStillPresentAction, "STILL_PRESENT")}
           aria-pressed={stillPresent}
           className={cn(

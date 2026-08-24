@@ -6,9 +6,14 @@ export function ActivityCard({ activity }: { activity: ActivityOverview }) {
   return (
     <Link href={`/activities/${activity.id}`} className="block">
       <Card className="h-full transition hover:border-[var(--primary)] hover:shadow-md">
-        <CardHeader>
-          <p className="text-lg font-bold text-[var(--foreground)]">{activity.name}</p>
-          <p className="text-sm text-[var(--muted)]">{activity.monitorName}</p>
+        <CardHeader className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-lg font-bold text-[var(--foreground)]">{activity.name}</p>
+            <p className="text-sm text-[var(--muted)]">{activity.monitorName}</p>
+          </div>
+          {activity.closed ? (
+            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">✓ Clôturée</span>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
           <p>

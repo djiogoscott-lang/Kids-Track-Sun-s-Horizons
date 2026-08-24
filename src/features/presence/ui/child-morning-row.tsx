@@ -5,7 +5,15 @@ import { markAbsentAction, markArrivedAction } from "@/features/presence/ui/acti
 import { cn } from "@/lib/utils";
 import type { ChildMorningRow } from "@/features/presence/application/queries";
 
-export function ChildMorningRow({ activityId, child }: { activityId: string; child: ChildMorningRow }) {
+export function ChildMorningRow({
+  activityId,
+  child,
+  locked = false,
+}: {
+  activityId: string;
+  child: ChildMorningRow;
+  locked?: boolean;
+}) {
   const [status, setStatus] = useState(child.status);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +39,7 @@ export function ChildMorningRow({ activityId, child }: { activityId: string; chi
       <div className="flex gap-2">
         <button
           type="button"
-          disabled={isPending}
+          disabled={isPending || locked}
           onClick={() => act(markArrivedAction, "ARRIVED")}
           aria-pressed={status === "ARRIVED"}
           className={cn(
@@ -45,7 +53,7 @@ export function ChildMorningRow({ activityId, child }: { activityId: string; chi
         </button>
         <button
           type="button"
-          disabled={isPending}
+          disabled={isPending || locked}
           onClick={() => act(markAbsentAction, "ABSENT")}
           aria-pressed={status === "ABSENT"}
           className={cn(
