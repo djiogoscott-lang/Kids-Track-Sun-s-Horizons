@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getActivityDetail, getActivityIdForMonitor } from "@/features/presence/application/queries";
+import { ActivityIcon, activityStyle } from "@/features/presence/ui/activity-icons";
 import { ActivityTabs } from "@/features/presence/ui/activity-tabs";
 import { ChildEveningRow } from "@/features/presence/ui/child-evening-row";
 import { ChildMorningRow } from "@/features/presence/ui/child-morning-row";
@@ -28,14 +29,23 @@ export default async function ActivityDetailPage({
 
   const activity = getActivityDetail(id);
   if (!activity) notFound();
+  const style = activityStyle(id);
 
   return (
-    <div className="space-y-6">
+    <div className="animate-float-in space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Moniteur : {activity.monitorName}</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">{activity.name}</h1>
-          {activity.closed ? <p className="mt-1 text-sm font-semibold text-[var(--muted)]">✓ Séance clôturée</p> : null}
+        <div className="flex items-center gap-3">
+          <span
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl"
+            style={{ backgroundColor: style.bg, color: style.color }}
+          >
+            <ActivityIcon activityId={id} size={24} strokeWidth={2} />
+          </span>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Moniteur : {activity.monitorName}</p>
+            <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">{activity.name}</h1>
+            {activity.closed ? <p className="mt-0.5 text-sm font-semibold text-[var(--muted)]">✓ Séance clôturée</p> : null}
+          </div>
         </div>
         {!activity.closed ? <ClosureControl activityId={id} /> : null}
       </div>
