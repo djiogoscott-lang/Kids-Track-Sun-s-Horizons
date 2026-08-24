@@ -8,9 +8,9 @@ beforeEach(() => {
 });
 
 // activity-baby-tennis seeds every child arrived and still present (see server/demo/store.ts)
-const ARRIVED_CHILD = "child-37";
-// activity-danse seeds the first two children as absent
-const ABSENT_CHILD = "child-10";
+const ARRIVED_CHILD = "child-38";
+// activity-danse seeds the last two children as absent
+const ABSENT_CHILD = "child-11";
 
 describe("presence commands", () => {
   it("marks an absent child as arrived", () => {
