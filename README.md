@@ -2,7 +2,16 @@
 
 Application de gestion des présences pour **Sun’s Horizons ASBL** (Bruxelles), qui organise des activités parascolaires, des stages et des cours sportifs et culturels pour enfants. Kids Track remplace la feuille de présence papier des moniteurs par un outil numérique simple : qui est arrivé, qui est absent, qui est parti, et qui est encore là.
 
-Ceci est la **V0.1** : un prototype fonctionnel et démontrable, pensé pour être utilisé sur un téléphone en quelques secondes, sans formation. Les enfants et moniteurs affichés sont des **données de démonstration fictives** (`Enfant 1`, `Moniteur 1`…) — voir [Démo aujourd'hui → données réelles demain](#démo-aujourdhui--données-réelles-demain) pour la suite.
+Ceci est la **V0.1** : un prototype fonctionnel et démontrable, pensé pour être utilisé sur un téléphone en quelques secondes, sans formation. Les enfants affichés portent des noms fictifs mais réalistes (aucun ne correspond à une vraie personne) ; les moniteurs restent volontairement génériques (`Moniteur 1`…) — voir [Démo aujourd'hui → données réelles demain](#démo-aujourdhui--données-réelles-demain) pour la suite.
+
+## Identité visuelle
+
+Le logo et les couleurs viennent du vrai site (sunshorizons.be), pas d'une identité inventée :
+
+- **Logo** : `public/logo.png`, utilisé sur l'écran de connexion et dans l'en-tête — c'est la marque officielle, jamais un texte ou un symbole de substitution.
+- **Favicon** : `src/app/icon.png` / `apple-icon.png` reprennent le symbole du site (Next.js génère les balises `<link rel="icon">` automatiquement).
+- **Palette** : les quatre couleurs d'accent (rouge, bleu, or, vert — voir `src/app/globals.css`) sont échantillonnées directement depuis le favicon officiel, pas choisies au hasard. Elles servent à la fois de couleurs de statut (présent/absent/garderie) et d'identité par activité (Danse/Multisport/Vélo/Baby Tennis), et retrouvent les quatre points colorés du chargement.
+- **Chargement** : un loader à quatre points (les mêmes couleurs) qui s'allument en séquence, sans aucun texte technique — jamais "Compiling"/"Building", y compris le badge de développement Next.js, désactivé (`devIndicators: false`).
 
 ## Le problème
 
