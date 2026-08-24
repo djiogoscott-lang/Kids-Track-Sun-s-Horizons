@@ -19,11 +19,15 @@ export interface DetectedAnomaly {
 
 export interface SessionForAnomalyCheck {
   id: string;
-  endsAt: string;
+  endsAt: string | Date;
   status: "SCHEDULED" | "ACTIVE" | "CLOSING" | "CLOSED";
 }
 
 const CLOSURE_GRACE_MINUTES = 15;
+
+function toTime(value: string | Date): number {
+  return value instanceof Date ? value.getTime() : new Date(value).getTime();
+}
 
 /**
  * Children still marked PRESENT once a session has ended: the single most
@@ -36,7 +40,7 @@ export function detectChildrenStillPresent(
   childNameByParticipantId: Map<string, string>,
 ): DetectedAnomaly[] {
   if (session.status === "CLOSED") return [];
-  if (now.getTime() < new Date(session.endsAt).getTime()) return [];
+  if (now.getTime() < toTime(session.endsAt)) return [];
 
   return records
     .filter((record) => record.presenceState === "PRESENT")
@@ -56,7 +60,7 @@ export function detectSessionNotClosed(session: SessionForAnomalyCheck, now: Dat
   if (session.status === "CLOSED") return [];
 
   const graceMs = CLOSURE_GRACE_MINUTES * 60_000;
-  if (now.getTime() < new Date(session.endsAt).getTime() + graceMs) return [];
+  if (now.getTime() < toTime(session.endsAt) + graceMs) return [];
 
   return [
     {
