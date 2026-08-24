@@ -43,17 +43,27 @@ export const INITIAL_ACTIVITY_MONITORS: Record<string, string> = {
   "activity-baby-tennis": "monitor-4",
 };
 
-// Demo data intentionally uses placeholder names ("Enfant 1", "Enfant 2"...),
-// never realistic ones: nothing here should look like it could be a real
-// child. A real deployment replaces this seed with children entered through
-// the admin "Enfants" screen (see server/demo/children-store.ts).
+// Realistic-sounding but entirely fictional demo names — nobody in this list
+// corresponds to a real child. A real deployment replaces this seed with
+// children entered through the admin "Enfants" screen (children-store.ts).
+const FIRST_NAMES = [
+  "Lucas", "Emma", "Noah", "Léa", "Gabriel", "Chloé", "Arthur", "Alice",
+  "Nathan", "Camille", "Hugo", "Inès", "Louis", "Zoé", "Tom", "Nolan",
+  "Jade", "Adam", "Manon", "Liam", "Sarah", "Ethan", "Juliette", "Maël",
+];
+const LAST_NAMES = [
+  "Martin", "Dupont", "Bernard", "Lambert", "Moreau", "Laurent", "Dubois",
+  "Simon", "Leroy", "Robert", "Fontaine", "Michel", "Lefèvre", "Mathieu",
+  "Janssens", "Peeters", "Rousseau", "Colson",
+];
+
 function makeChildren(activityId: string, count: number, offset: number): Child[] {
   return Array.from({ length: count }, (_, i) => {
     const n = offset + i + 1;
     return {
       id: `child-${n}`,
-      firstName: "Enfant",
-      lastName: String(n),
+      firstName: FIRST_NAMES[(n - 1) % FIRST_NAMES.length],
+      lastName: LAST_NAMES[((n - 1) * 7) % LAST_NAMES.length],
       activityId,
       daycareAuto: n % 7 === 0,
       active: true,
