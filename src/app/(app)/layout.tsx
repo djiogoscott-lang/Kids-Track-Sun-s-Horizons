@@ -5,12 +5,13 @@ import { signOutAction } from "@/lib/auth/actions";
 import { getCurrentUser } from "@/lib/auth/session";
 
 const ADMIN_LINKS = [
-  { href: "/dashboard", label: "Tableau de bord" },
-  { href: "/sessions", label: "Séances" },
-  { href: "/anomalies", label: "Anomalies" },
+  { href: "/activities", label: "Activités" },
+  { href: "/admin", label: "Administration" },
 ];
 
-const MONITOR_LINKS = [{ href: "/sessions", label: "Mes séances" }];
+// A monitor manages exactly one activity and lands on it directly at login,
+// so there is nothing else for them to navigate to.
+const MONITOR_LINKS: { href: string; label: string }[] = [];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
@@ -30,22 +31,24 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </div>
           </div>
 
-          <nav className="hidden items-center gap-1 sm:flex" aria-label="Navigation principale">
-            {links.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
+          {links.length > 0 ? (
+            <nav className="hidden items-center gap-1 sm:flex" aria-label="Navigation principale">
+              {links.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
 
           <div className="flex items-center gap-3">
             <div className="hidden text-right leading-tight sm:block">
               <p className="text-sm font-semibold text-[var(--foreground)]">{user.name}</p>
-              <p className="text-xs text-[var(--muted)]">{user.role === "ADMIN" ? "Administrateur" : "Monitrice"}</p>
+              <p className="text-xs text-[var(--muted)]">{user.role === "ADMIN" ? "Administrateur" : "Moniteur"}</p>
             </div>
             <form action={signOutAction}>
               <button
@@ -57,17 +60,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </form>
           </div>
         </div>
-        <nav className="flex items-center gap-1 overflow-x-auto border-t border-[var(--border)] px-4 py-2 sm:hidden" aria-label="Navigation principale">
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+        {links.length > 0 ? (
+          <nav className="flex items-center gap-1 overflow-x-auto border-t border-[var(--border)] px-4 py-2 sm:hidden" aria-label="Navigation principale">
+            {links.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        ) : null}
       </header>
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</main>
     </div>
