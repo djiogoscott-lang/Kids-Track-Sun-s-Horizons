@@ -24,6 +24,17 @@
   --warning: var(--brand-gold);
   --warning-bg: #fef2e0;
   --tint-blue-bg: #e8eef8;
+
+  /* Two more accents sourced from the real site's own color strip (its
+     header uses a six-color band): a deepened purple for legible text/icon
+     use, and its actual yellow-gold — kept distinct in hue from the
+     orange/gold above so "attention" and "accent" never look identical.
+     Used sparingly and only where they carry a specific meaning (see
+     README) — not as decoration. */
+  --brand-purple: #7c5cd6;
+  --secondary-bg: #f1edfc;
+  --brand-yellow: #f0c24b;
+  --accent-bg: #fbf3de;
 }
 
 * {
