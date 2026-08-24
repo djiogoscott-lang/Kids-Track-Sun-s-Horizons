@@ -22,9 +22,29 @@ export function isPastDaycareCutoff(now: Date): boolean {
 
 /**
  * The evening status is never chosen by the monitor for the DAYCARE case —
- * it is purely a function of whether the child has left and what time it is.
+ * it follows automatically once the activity is closed for the day, or once
+ * it is simply past the cutoff time, whichever comes first.
  */
-export function eveningStatus(record: PresenceRecord, now: Date): EveningStatus {
+export function eveningStatus(record: PresenceRecord, activityClosed: boolean, now: Date): EveningStatus {
   if (record.left) return "LEFT";
-  return isPastDaycareCutoff(now) ? "DAYCARE" : "STILL_PRESENT";
+  return activityClosed || isPastDaycareCutoff(now) ? "DAYCARE" : "STILL_PRESENT";
+}
+
+export type DaycareReason = "PLANNED" | "AFTER_SESSION";
+
+/**
+ * PLANNED covers a child registered for daycare from the morning — they
+ * appear as soon as they arrive, never waiting on the clock or a closure.
+ * AFTER_SESSION covers anyone still on-site once their activity's day ends,
+ * whether that end came from an explicit closure or the automatic cutoff.
+ */
+export function daycareReason(
+  record: PresenceRecord,
+  daycareAuto: boolean,
+  activityClosed: boolean,
+  now: Date,
+): DaycareReason | null {
+  if (!record.arrived || record.left) return null;
+  if (daycareAuto) return "PLANNED";
+  return activityClosed || isPastDaycareCutoff(now) ? "AFTER_SESSION" : null;
 }
