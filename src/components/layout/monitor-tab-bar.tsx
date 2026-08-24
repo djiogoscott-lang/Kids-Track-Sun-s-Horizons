@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ClipboardCheck, DoorOpen, Home } from "lucide-react";
+import { Bell, ClipboardCheck, DoorOpen, Home, House } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useNotifications } from "@/features/notifications/notifications-provider";
@@ -21,11 +21,12 @@ export function MonitorTabBar({ activityId }: { activityId: string }) {
   const onActivity = pathname === `/activities/${activityId}`;
 
   const tabs: Tab[] = [
+    { href: `/activities/${activityId}`, label: "Accueil", icon: House, match: () => onActivity && !currentTab },
     {
       href: `/activities/${activityId}?tab=morning`,
       label: "Présences",
       icon: ClipboardCheck,
-      match: () => onActivity && currentTab !== "evening",
+      match: () => onActivity && currentTab === "morning",
     },
     {
       href: `/activities/${activityId}?tab=evening`,
@@ -50,13 +51,14 @@ export function MonitorTabBar({ activityId }: { activityId: string }) {
             <Link
               key={tab.label}
               href={tab.href}
+              data-tour={tab.label === "Notifications" ? "notifications-tab" : undefined}
               className="tap-scale flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-semibold"
               style={{ color: active ? "var(--primary)" : "var(--muted)" }}
             >
               <span className="relative">
-                <Icon size={22} strokeWidth={active ? 2.4 : 2} className={cn(active && "drop-shadow-[0_0_0_var(--primary)]")} />
+                <Icon size={21} strokeWidth={active ? 2.4 : 2} className={cn(active && "drop-shadow-[0_0_0_var(--primary)]")} />
                 {tab.label === "Notifications" && unreadCount > 0 ? (
-                  <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--danger)] px-1 text-[10px] font-bold leading-none text-white">
+                  <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--danger)] px-1 text-[10px] font-bold leading-none text-white animate-fade-in">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 ) : null}

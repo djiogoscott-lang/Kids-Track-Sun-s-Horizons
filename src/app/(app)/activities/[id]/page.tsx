@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { notFound } from "next/navigation";
+import { DismissibleTip } from "@/components/ui/dismissible-tip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getActivityDetail, getActivityIdForMonitor } from "@/features/presence/application/queries";
 import { ActivityIcon, activityStyle } from "@/features/presence/ui/activity-icons";
+import { ActivityOverview } from "@/features/presence/ui/activity-overview";
 import { ActivityTabs } from "@/features/presence/ui/activity-tabs";
 import { ChildEveningRow } from "@/features/presence/ui/child-evening-row";
 import { ChildMorningRow } from "@/features/presence/ui/child-morning-row";
@@ -30,6 +32,27 @@ export default async function ActivityDetailPage({
   const activity = getActivityDetail(id);
   if (!activity) notFound();
   const style = activityStyle(id);
+  const now = new Date();
+
+  // No ?tab= yet: this is the landing screen — a quick "where am I in the
+  // day" overview, not the full roster. Présences/Départs open the detail
+  // view below via their own card.
+  if (!tab) {
+    return (
+      <div className="animate-float-in space-y-6">
+        <div className="flex items-center gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl" style={{ backgroundColor: style.bg, color: style.color }}>
+            <ActivityIcon activityId={id} size={24} strokeWidth={2} />
+          </span>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Moniteur : {activity.monitorName}</p>
+            <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">{activity.name}</h1>
+          </div>
+        </div>
+        <ActivityOverview activityId={id} activity={activity} now={now} />
+      </div>
+    );
+  }
 
   return (
     <div className="animate-float-in space-y-6">
@@ -62,6 +85,9 @@ export default async function ActivityDetailPage({
                 { value: activity.morningCounters.absentCount, label: "Absents", tone: "danger" },
               ]}
             />
+            <DismissibleTip storageKey="kt_tip_presence_buttons">
+              Appuie directement sur <strong>Arrivé</strong> ou <strong>Absent</strong> pour chaque enfant — le compteur se met à jour aussitôt.
+            </DismissibleTip>
             {activity.morningList.length === 0 ? (
               <EmptyState title="Aucun enfant sur cette activité." />
             ) : (
