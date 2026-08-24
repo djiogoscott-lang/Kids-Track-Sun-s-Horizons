@@ -1,4 +1,5 @@
-import { ACTIVITIES, CHILDREN } from "./data";
+import { ACTIVITIES, INITIAL_ACTIVITY_MONITORS } from "./data";
+import { getChildren } from "./children-store";
 import type { PresenceRecord } from "@/features/presence/domain/types";
 
 interface DemoScenario {
@@ -20,8 +21,9 @@ const SCENARIOS: Record<string, DemoScenario> = {
 function buildInitialRecords(now: Date): Map<string, PresenceRecord> {
   const records = new Map<string, PresenceRecord>();
 
+  const allChildren = getChildren();
   for (const activity of ACTIVITIES) {
-    const children = CHILDREN.filter((c) => c.activityId === activity.id);
+    const children = allChildren.filter((c) => c.activityId === activity.id);
     const scenario = SCENARIOS[activity.id];
 
     children.forEach((child, index) => {
@@ -63,7 +65,7 @@ export function resetPresenceRecords(): Map<string, PresenceRecord> {
 const globalForAssignments = globalThis as unknown as { __ktActivityAssignments?: Map<string, string> };
 
 function buildInitialAssignments(): Map<string, string> {
-  return new Map(ACTIVITIES.map((a) => [a.id, a.monitorId]));
+  return new Map(ACTIVITIES.map((a) => [a.id, INITIAL_ACTIVITY_MONITORS[a.id]]));
 }
 
 export function getActivityAssignments(): Map<string, string> {

@@ -8,7 +8,6 @@ export interface Monitor {
 export interface Activity {
   id: string;
   name: string;
-  monitorId: string;
 }
 
 export interface Child {
@@ -16,6 +15,11 @@ export interface Child {
   firstName: string;
   lastName: string;
   activityId: string;
+  /** Registered for daycare from the start of the day, independent of pickup time. */
+  daycareAuto: boolean;
+  /** Inactive children are hidden from rosters without deleting their record. */
+  active: boolean;
+  notes: string;
 }
 
 export const MONITORS: Monitor[] = [
@@ -26,37 +30,39 @@ export const MONITORS: Monitor[] = [
 ];
 
 export const ACTIVITIES: Activity[] = [
-  { id: "activity-danse", name: "Danse", monitorId: "monitor-1" },
-  { id: "activity-multisport", name: "Multisport", monitorId: "monitor-2" },
-  { id: "activity-velo", name: "Vélo", monitorId: "monitor-3" },
-  { id: "activity-baby-tennis", name: "Baby Tennis", monitorId: "monitor-4" },
+  { id: "activity-danse", name: "Danse" },
+  { id: "activity-multisport", name: "Multisport" },
+  { id: "activity-velo", name: "Vélo" },
+  { id: "activity-baby-tennis", name: "Baby Tennis" },
 ];
 
-const FIRST_NAMES = [
-  "Lucas", "Emma", "Noah", "Adam", "Léa", "Gabriel", "Chloé", "Nathan", "Manon", "Louis",
-  "Camille", "Hugo", "Inès", "Arthur", "Zoé", "Jules", "Lina", "Liam", "Sarah", "Mohamed",
-  "Yasmine", "Ethan", "Alice", "Rayan", "Juliette", "Maël", "Nour", "Théo", "Amina", "Oscar",
-  "Elena", "Samuel", "Mila", "Victor", "Safia", "Léon", "Rose", "Antoine", "Salma", "Milo",
-  "Anaïs", "Baptiste", "Enzo", "Clara", "Louise",
-];
-const LAST_NAMES = [
-  "Martin", "Dupont", "Bernard", "Lambert", "Peeters", "Janssens", "Dubois", "Lemaire",
-  "Moreau", "Simon", "Leroy", "Fontaine", "Rousseau", "Colson", "Gilson", "Wauters",
-];
+export const INITIAL_ACTIVITY_MONITORS: Record<string, string> = {
+  "activity-danse": "monitor-1",
+  "activity-multisport": "monitor-2",
+  "activity-velo": "monitor-3",
+  "activity-baby-tennis": "monitor-4",
+};
 
+// Demo data intentionally uses placeholder names ("Enfant 1", "Enfant 2"...),
+// never realistic ones: nothing here should look like it could be a real
+// child. A real deployment replaces this seed with children entered through
+// the admin "Enfants" screen (see server/demo/children-store.ts).
 function makeChildren(activityId: string, count: number, offset: number): Child[] {
   return Array.from({ length: count }, (_, i) => {
-    const n = offset + i;
+    const n = offset + i + 1;
     return {
       id: `child-${n}`,
-      firstName: FIRST_NAMES[n % FIRST_NAMES.length],
-      lastName: LAST_NAMES[(n * 5) % LAST_NAMES.length],
+      firstName: "Enfant",
+      lastName: String(n),
       activityId,
+      daycareAuto: n % 7 === 0,
+      active: true,
+      notes: "",
     };
   });
 }
 
-export const CHILDREN: Child[] = [
+export const INITIAL_CHILDREN: Child[] = [
   ...makeChildren("activity-danse", 12, 0),
   ...makeChildren("activity-multisport", 15, 12),
   ...makeChildren("activity-velo", 10, 27),
