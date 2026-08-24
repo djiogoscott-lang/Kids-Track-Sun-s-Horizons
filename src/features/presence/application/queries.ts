@@ -1,7 +1,7 @@
 import { ACTIVITIES, MONITORS } from "@/server/demo/data";
 import { getActivityDayState } from "@/server/demo/activity-day-store";
 import { getChild, getChildren } from "@/server/demo/children-store";
-import { getAllNotifications, getNotificationsForActivity, type Notification } from "@/server/demo/notifications-store";
+import { getAllNotifications, getNotificationsForActivity, getUnreadCountForActivity, type Notification } from "@/server/demo/notifications-store";
 import { getActivityAssignments, getPresenceRecords } from "@/server/demo/store";
 import { daycareReason, eveningStatus, type DaycareReason } from "@/features/presence/domain/daycare";
 import { morningStatus } from "@/features/presence/domain/types";
@@ -202,6 +202,10 @@ export function getDashboardSummary(now = new Date()): DashboardSummary {
 
 export function getNotificationsForMonitor(activityId: string): Notification[] {
   return getNotificationsForActivity(activityId);
+}
+
+export function getUnreadNotificationCount(activityId: string): number {
+  return getUnreadCountForActivity(activityId);
 }
 
 export interface NotificationRow extends Notification {

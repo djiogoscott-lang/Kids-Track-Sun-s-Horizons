@@ -1,7 +1,7 @@
 import { ACTIVITIES, MONITORS } from "@/server/demo/data";
 import { closeActivityDay as closeActivityDayInStore, getActivityDayState } from "@/server/demo/activity-day-store";
 import { createChild as createChildInStore, getChild, updateChild as updateChildInStore, type NewChildInput } from "@/server/demo/children-store";
-import { addNotification } from "@/server/demo/notifications-store";
+import { addNotification, markActivityNotificationsRead } from "@/server/demo/notifications-store";
 import { getPresenceRecords, setActivityMonitor } from "@/server/demo/store";
 import { PresenceCommandError } from "./errors";
 
@@ -113,4 +113,8 @@ export function sendNotification(activityId: string, message: string, createdBy:
   if (!ACTIVITIES.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
   if (!message.trim()) throw new PresenceCommandError("Le message ne peut pas être vide.");
   return addNotification(activityId, message.trim(), createdBy);
+}
+
+export function markNotificationsRead(activityId: string) {
+  markActivityNotificationsRead(activityId);
 }

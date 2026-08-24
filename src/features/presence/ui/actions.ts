@@ -8,6 +8,7 @@ import {
   markAbsent,
   markArrived,
   markLeft,
+  markNotificationsRead,
   markStillPresent,
   sendNotification,
   setChildActive,
@@ -44,7 +45,8 @@ function revalidateActivityViews(activityId: string) {
   revalidatePath(`/activities/${activityId}`);
   revalidatePath("/activities");
   revalidatePath("/garderie");
-  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/presences");
+  revalidatePath("/admin/departures");
 }
 
 export async function markArrivedAction(activityId: string, childId: string): Promise<ActionResult> {
@@ -142,4 +144,14 @@ export async function sendNotificationAction(activityId: string, message: string
   revalidatePath("/notifications");
   revalidatePath("/admin/notifications");
   return result;
+}
+
+/** Read state is pushed live over SSE; this just persists it server-side. */
+export async function markNotificationsReadAction(): Promise<ActionResult> {
+  const user = await requireUser("MONITOR");
+  const activityId = getActivityIdForMonitor(user.id);
+  if (!activityId) return { ok: false, message: "Aucune activité associée." };
+  markNotificationsRead(activityId);
+  revalidatePath("/notifications");
+  return { ok: true };
 }
