@@ -48,15 +48,20 @@ Le moniteur dispose d'un bouton **✓ Clôturer la séance**, protégé par une 
 
 **Côté moniteur** (interface volontairement réduite à l'essentiel) :
 - Connexion en un clic (compte de démonstration par moniteur), arrivée directe sur son activité — aucune liste à choisir.
-- Présences, Départs, Garderie, Notifications : quatre écrans, pas un de plus.
-- Compteurs en direct (enfants / arrivés / absents, puis présents / partis / encore présents) qui se mettent à jour immédiatement.
+- Présences, Départs, Garderie, Notifications : quatre écrans, pas un de plus, en barre d'onglets fixe en bas d'écran (une main sur le téléphone, l'autre pour l'appel).
+- Compteurs en direct qui se mettent à jour immédiatement, et un badge de notification qui apparaît sans recharger la page — voir [Temps réel](#temps-réel).
 
-**Côté administrateur** (interface complète) :
-- Tableau de bord : enfants du jour, présents, absents, en garderie, aperçu des 4 activités.
-- Gestion des enfants : ajouter, modifier, désactiver, associer à une activité, définir la garderie automatique, ajouter une note libre.
-- Réassignation moniteur ↔ activité (échange automatique pour qu'un moniteur ne se retrouve jamais sur deux activités à la fois).
-- Notifications : transmettre un message ciblé au moniteur d'une activité (ex. "le parent d'Emma la récupère à 15h30").
-- Garderie et Activités, partagées avec la vue moniteur.
+**Côté administrateur** (accès direct, pas de tableau de bord statistique) :
+- Enfants : ajouter, modifier, désactiver, associer à une activité, définir la garderie automatique, ajouter une note libre.
+- Activités, Moniteurs (réassignation avec échange automatique pour qu'un moniteur ne se retrouve jamais sur deux activités à la fois).
+- Présences et Départs : toutes les activités du jour sur un seul écran, avec les mêmes actions que la vue moniteur.
+- Garderie et Notifications (composer un message ciblé, ex. "le parent d'Emma la récupère à 15h30"), partagées avec la vue moniteur.
+
+## Temps réel
+
+Les notifications sont poussées en direct par **Server-Sent Events** (`/api/notifications/stream`), pas par un `setInterval` qui interroge le serveur en boucle : chaque moniteur connecté tient un flux HTTP léger, abonné au canal de sa seule activité, et le navigateur (`EventSource`) se reconnecte tout seul si la connexion tombe. Quand l'administrateur envoie un message, le magasin en mémoire publie l'évènement sur ce canal ; le badge et une notification visuelle apparaissent instantanément chez le moniteur concerné, sans rechargement — et se remettent à zéro dès qu'il ouvre l'écran Notifications. Choisi plutôt qu'un WebSocket (le flux est à sens unique, rien ne le justifie) ou un abonnement de base de données (aucune vraie base branchée pour l'instant).
+
+Les compteurs de présence, eux, se mettaient déjà à jour sans rechargement avant cette passe — c'est le comportement natif des Server Actions + `revalidatePath` de Next.js, pas quelque chose de spécifique aux notifications.
 
 ## Démo aujourd'hui → données réelles demain
 
@@ -87,23 +92,27 @@ src/
     (app)/
       activities/            Accueil (grille) + écran d'une activité (Présences/Départs)
       garderie/              Liste Garderie, partagée moniteur/admin
-      notifications/         Messages reçus (vue moniteur)
+      notifications/         Messages reçus (vue moniteur, live)
       admin/
-        dashboard/           Tableau de bord admin
         children/            Liste, ajout, édition des enfants
         monitors/            Association moniteur ↔ activité
+        presences/           Présences de toutes les activités (admin)
+        departures/          Départs de toutes les activités (admin)
         notifications/       Composer et historique des messages envoyés
+    api/notifications/stream/ Route SSE : pousse les notifications en direct
   components/
-    ui/                      Boutons, cartes, états vides — primitives génériques
+    ui/                      Boutons, cartes, états vides, loader — primitives génériques
     auth/                    Formulaire de connexion réel + options de connexion démo
     brand/                   Identité visuelle Sun’s Horizons
+    layout/                  Barre d'onglets mobile du moniteur
   features/
+    notifications/           Contexte client (liste + badge live) + abonnement SSE
     presence/
       domain/                Logique pure : arrivé/parti, statut Garderie, raison Garderie
       application/           Commandes (CRUD enfants, présence, clôture, notifications) et requêtes
-      ui/                    Lignes enfant, onglets, compteurs, formulaires d'administration
+      ui/                    Lignes enfant, onglets, compteurs, icônes d'activité, formulaires d'administration
   server/
-    demo/                    Données et état en mémoire (V0.1) : enfants, présences, clôtures, notifications
+    demo/                    Données et état en mémoire (V0.1) : enfants, présences, clôtures, notifications + bus d'évènements
   lib/
     auth/                    Session courante (démo ou Supabase), garde d'accès par rôle
     supabase/                Clients Supabase (navigateur, serveur, proxy de session)
@@ -144,20 +153,20 @@ npm run build
 ## Rôles
 
 - **MONITOR** : atterrit directement sur son activité assignée après connexion ; marque arrivées/absences et départs uniquement pour cette activité ; accède à la Garderie (partagée) et à ses Notifications.
-- **ADMIN** : accède au tableau de bord, à toutes les activités, à la gestion des enfants, à l'association moniteur ↔ activité, et à l'envoi de notifications.
+- **ADMIN** : accède directement aux enfants, activités, moniteurs, présences, départs, garderie et notifications — pas de tableau de bord intermédiaire.
 
 Un moniteur qui tente d'accéder à l'URL d'une autre activité que la sienne est redirigé vers la sienne.
 
 ## Tests
 
-`npm test` couvre : le calcul du statut Garderie avant/à/après 16h15 et selon la clôture, la distinction garderie prévue / garderie après séance, les commandes de présence (arrivée, absence qui efface un départ existant, départ refusé sans arrivée préalable, annulation d'un départ), et l'échange d'assignation moniteur ↔ activité (aucun moniteur ne se retrouve sur deux activités après une réassignation).
+`npm test` couvre : le calcul du statut Garderie avant/à/après 16h15 et selon la clôture, la distinction garderie prévue / garderie après séance, les commandes de présence (arrivée, absence qui efface un départ existant, départ refusé sans arrivée préalable, annulation d'un départ), l'échange d'assignation moniteur ↔ activité, et le bus de notifications (comptage des non-lus par activité, remise à zéro à la lecture, cloisonnement entre activités, abonnement/désabonnement aux évènements).
 
 ## Limites connues de la V0.1
 
 - Les activités et enfants sont des données en mémoire, pas encore persistées dans une vraie base — voir [Démo aujourd'hui → données réelles demain](#démo-aujourdhui--données-réelles-demain) pour le chemin de migration déjà préparé.
 - Le seuil de 16h15 est un réglage global fixe (pas encore configurable par activité).
 - Pas de mode hors-ligne réel.
-- Les notifications sont un fil simple, sans accusé de lecture ni historique par enfant.
+- Le flux SSE tient une connexion HTTP ouverte par moniteur connecté ; convient bien à `npm run dev` et à un déploiement Node classique, mais un hébergement serverless à la durée d'exécution très limitée demanderait d'adapter le transport (le `EventSource` du navigateur se reconnecte déjà seul, ce qui absorbe une bonne partie du risque).
 
 ## Roadmap
 
