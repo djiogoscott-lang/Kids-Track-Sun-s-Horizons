@@ -16,8 +16,11 @@ export function CounterBar({
   return (
     <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-3">
       {items.map((item) => (
-        <div key={item.label} className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3 text-center sm:flex-1">
-          <p className={cn("text-2xl font-bold tabular-nums", toneClass[item.tone ?? "default"])}>{item.value}</p>
+        <div
+          key={item.label}
+          className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3.5 text-center shadow-[0_1px_2px_rgba(16,33,62,0.03)] sm:flex-1"
+        >
+          <p className={cn("font-heading text-2xl font-bold tabular-nums", toneClass[item.tone ?? "default"])}>{item.value}</p>
           <p className="mt-0.5 text-xs font-semibold uppercase tracking-[0.06em] text-[var(--muted)]">{item.label}</p>
         </div>
       ))}

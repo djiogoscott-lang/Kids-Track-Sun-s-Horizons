@@ -43,7 +43,7 @@ export function ChildMorningRow({
           onClick={() => act(markArrivedAction, "ARRIVED")}
           aria-pressed={status === "ARRIVED"}
           className={cn(
-            "h-14 flex-1 rounded-2xl text-base font-bold transition-colors sm:flex-none sm:w-36",
+            "tap-scale h-14 flex-1 rounded-2xl text-base font-bold transition-colors sm:flex-none sm:w-36",
             status === "ARRIVED"
               ? "bg-[var(--success)] text-white"
               : "border-2 border-[var(--border)] bg-white text-[var(--muted)]",
@@ -57,7 +57,7 @@ export function ChildMorningRow({
           onClick={() => act(markAbsentAction, "ABSENT")}
           aria-pressed={status === "ABSENT"}
           className={cn(
-            "h-14 flex-1 rounded-2xl text-base font-bold transition-colors sm:flex-none sm:w-36",
+            "tap-scale h-14 flex-1 rounded-2xl text-base font-bold transition-colors sm:flex-none sm:w-36",
             status === "ABSENT" ? "bg-[var(--danger)] text-white" : "border-2 border-[var(--border)] bg-white text-[var(--muted)]",
           )}
         >

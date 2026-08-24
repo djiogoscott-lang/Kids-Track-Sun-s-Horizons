@@ -13,7 +13,7 @@ export default async function EditChildPage({ params }: { params: Promise<{ id: 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">
           {child.firstName} {child.lastName}
         </h1>
       </div>

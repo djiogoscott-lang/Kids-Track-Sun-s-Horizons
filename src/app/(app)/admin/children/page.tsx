@@ -13,7 +13,7 @@ export default async function AdminChildrenPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Enfants</h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Enfants</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">{children.length} enfant{children.length > 1 ? "s" : ""} enregistré{children.length > 1 ? "s" : ""}.</p>
         </div>
         <Link href="/admin/children/new">

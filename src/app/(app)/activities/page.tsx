@@ -16,7 +16,7 @@ export default async function ActivitiesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Activités</h1>
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Activités</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">Vue d&apos;ensemble du jour, par activité.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

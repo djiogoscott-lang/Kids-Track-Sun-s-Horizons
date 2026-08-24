@@ -13,7 +13,7 @@ export default async function AdminNotificationsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">📢 Notifications</h1>
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">📢 Notifications</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">Transmettre une information au moniteur d&apos;une activité.</p>
       </div>
 

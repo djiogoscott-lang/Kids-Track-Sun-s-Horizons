@@ -50,7 +50,7 @@ export function ChildEveningRow({
           onClick={() => act(markLeftAction, "LEFT")}
           aria-pressed={status === "LEFT"}
           className={cn(
-            "h-14 flex-1 rounded-2xl text-base font-bold transition-colors sm:flex-none sm:w-36",
+            "tap-scale h-14 flex-1 rounded-2xl text-base font-bold transition-colors sm:flex-none sm:w-36",
             status === "LEFT" ? "bg-[var(--success)] text-white" : "border-2 border-[var(--border)] bg-white text-[var(--muted)]",
           )}
         >
@@ -62,7 +62,7 @@ export function ChildEveningRow({
           onClick={() => act(markStillPresentAction, "STILL_PRESENT")}
           aria-pressed={stillPresent}
           className={cn(
-            "h-14 flex-1 rounded-2xl text-base font-bold transition-colors sm:flex-none sm:w-40",
+            "tap-scale h-14 flex-1 rounded-2xl text-base font-bold transition-colors sm:flex-none sm:w-40",
             stillPresent ? "bg-[var(--warning)] text-white" : "border-2 border-[var(--border)] bg-white text-[var(--muted)]",
           )}
         >

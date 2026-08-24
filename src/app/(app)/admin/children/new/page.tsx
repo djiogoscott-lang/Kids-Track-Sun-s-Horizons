@@ -8,7 +8,7 @@ export default async function NewChildPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Ajouter un enfant</h1>
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Ajouter un enfant</h1>
       </div>
       <ChildForm activities={ACTIVITIES} />
     </div>

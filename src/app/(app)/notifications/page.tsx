@@ -15,7 +15,7 @@ export default async function NotificationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">🔔 Notifications</h1>
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">🔔 Notifications</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">Informations transmises par l&apos;administration pour votre activité.</p>
       </div>
 
