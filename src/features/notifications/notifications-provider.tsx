@@ -19,9 +19,22 @@ interface NotificationsContextValue {
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
 
+const FALLBACK_VALUE: NotificationsContextValue = { notifications: [], unreadCount: 0, markAllRead: () => {} };
+
+/**
+ * Falls back to an inert, empty value instead of throwing when rendered
+ * without a provider. A hard throw here takes the whole page down with it —
+ * a missing/empty notification badge is a far smaller failure than a page
+ * that can't load at all, so this degrades instead of crashing.
+ */
 export function useNotifications(): NotificationsContextValue {
   const ctx = useContext(NotificationsContext);
-  if (!ctx) throw new Error("useNotifications must be used within NotificationsProvider");
+  if (!ctx) {
+    if (process.env.NODE_ENV !== "production") {
+      console.error("useNotifications called outside NotificationsProvider — falling back to an empty value.");
+    }
+    return FALLBACK_VALUE;
+  }
   return ctx;
 }
 
@@ -29,12 +42,12 @@ type StreamEvent = { type: "new"; notification: NotificationView } | { type: "re
 
 export function NotificationsProvider({
   initialNotifications,
-  live = true,
+  live,
   children,
 }: {
   initialNotifications: NotificationView[];
   /** Only monitors have a single assigned activity for /api/notifications/stream to scope to — it 401s anyone else, so admins get the initial snapshot without opening a doomed connection. */
-  live?: boolean;
+  live: boolean;
   children: React.ReactNode;
 }) {
   const [notifications, setNotifications] = useState(initialNotifications);
