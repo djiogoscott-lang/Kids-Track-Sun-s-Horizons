@@ -1,11 +1,15 @@
 import { ArrowRight } from "lucide-react";
-import { getActivityIdForMonitor } from "@/features/presence/application/queries";
 import { activityStyle } from "@/features/presence/ui/activity-icons";
 import { signInDemoAction } from "@/lib/auth/actions";
-import { ACTIVITIES, DEMO_USERS } from "@/server/demo/data";
+import { ACTIVITIES, DEMO_USERS, INITIAL_ACTIVITY_MONITORS } from "@/server/demo/data";
 
+// Deliberately the pure demo mapping, never the indirected data source: these
+// are the fixed demo user ids (monitor-1..4), which only ever mean anything
+// against the demo assignment table — they don't correspond to any real
+// Supabase user, so this must keep working exactly the same regardless of
+// whether Supabase is configured for real data.
 function activityFor(userId: string) {
-  const activityId = getActivityIdForMonitor(userId);
+  const activityId = Object.entries(INITIAL_ACTIVITY_MONITORS).find(([, monitorId]) => monitorId === userId)?.[0];
   return ACTIVITIES.find((a) => a.id === activityId);
 }
 

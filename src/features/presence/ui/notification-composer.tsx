@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { sendNotificationAction } from "@/features/presence/ui/actions";
-import type { Activity } from "@/server/demo/data";
+import type { ActivityRecord as Activity } from "@/server/data-source";
 
 export function NotificationComposer({ activities }: { activities: Activity[] }) {
   const router = useRouter();

@@ -23,13 +23,15 @@ export default async function ActivityDetailPage({
   const { tab } = await searchParams;
   const user = await requireUser();
 
-  if (user.role === "MONITOR" && getActivityIdForMonitor(user.id) !== id) {
-    const ownActivityId = getActivityIdForMonitor(user.id);
-    if (ownActivityId) redirect(`/activities/${ownActivityId}`);
-    notFound();
+  if (user.role === "MONITOR") {
+    const ownActivityId = await getActivityIdForMonitor(user.id);
+    if (ownActivityId !== id) {
+      if (ownActivityId) redirect(`/activities/${ownActivityId}`);
+      notFound();
+    }
   }
 
-  const activity = getActivityDetail(id);
+  const activity = await getActivityDetail(id);
   if (!activity) notFound();
   const style = activityStyle(id);
   const now = new Date();

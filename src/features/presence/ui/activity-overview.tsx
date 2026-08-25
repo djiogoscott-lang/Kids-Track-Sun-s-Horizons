@@ -6,9 +6,9 @@ import { DayStatusBar } from "@/features/presence/ui/day-status-bar";
 import { OverviewCard } from "@/features/presence/ui/overview-card";
 import { formatDateLong } from "@/lib/format";
 
-export function ActivityOverview({ activityId, activity, now }: { activityId: string; activity: ActivityDetail; now: Date }) {
+export async function ActivityOverview({ activityId, activity, now }: { activityId: string; activity: ActivityDetail; now: Date }) {
   const style = activityStyle(activityId);
-  const daycare = getDaycareList(now);
+  const daycare = await getDaycareList(now);
   const daycarePlanned = daycare.filter((c) => c.reason === "PLANNED").length;
   const daycareAfterSession = daycare.filter((c) => c.reason === "AFTER_SESSION").length;
 

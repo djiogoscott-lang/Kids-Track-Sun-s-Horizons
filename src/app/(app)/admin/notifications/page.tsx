@@ -4,11 +4,11 @@ import { getAllNotificationsForAdmin } from "@/features/presence/application/que
 import { NotificationComposer } from "@/features/presence/ui/notification-composer";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatTime } from "@/lib/format";
-import { ACTIVITIES } from "@/server/demo/data";
+import { getActivitiesList } from "@/server/data-source";
 
 export default async function AdminNotificationsPage() {
   await requireUser("ADMIN");
-  const notifications = getAllNotificationsForAdmin();
+  const [notifications, activities] = await Promise.all([getAllNotificationsForAdmin(), getActivitiesList()]);
 
   return (
     <div className="space-y-8">
@@ -19,7 +19,7 @@ export default async function AdminNotificationsPage() {
 
       <Card>
         <CardContent>
-          <NotificationComposer activities={ACTIVITIES} />
+          <NotificationComposer activities={activities} />
         </CardContent>
       </Card>
 

@@ -18,22 +18,22 @@ import {
 import { getActivityIdForMonitor } from "@/features/presence/application/queries";
 import { PresenceCommandError } from "@/features/presence/application/errors";
 import { requireUser } from "@/lib/auth/require-user";
-import type { NewChildInput } from "@/server/demo/children-store";
+import type { NewChildRecordInput } from "@/server/data-source";
 
 export type ActionResult = { ok: true } | { ok: false; message: string };
 
 async function assertActivityAccess(activityId: string) {
   const user = await requireUser();
   if (user.role === "ADMIN") return user;
-  if (getActivityIdForMonitor(user.id) !== activityId) {
+  if ((await getActivityIdForMonitor(user.id)) !== activityId) {
     throw new PresenceCommandError("Vous n'avez pas accès à cette activité.");
   }
   return user;
 }
 
-function toResult(fn: () => void): ActionResult {
+async function toResult(fn: () => Promise<unknown>): Promise<ActionResult> {
   try {
-    fn();
+    await fn();
     return { ok: true };
   } catch (error) {
     if (error instanceof PresenceCommandError) return { ok: false, message: error.message };
@@ -51,28 +51,28 @@ function revalidateActivityViews(activityId: string) {
 
 export async function markArrivedAction(activityId: string, childId: string): Promise<ActionResult> {
   await assertActivityAccess(activityId);
-  const result = toResult(() => markArrived(activityId, childId));
+  const result = await toResult(() => markArrived(activityId, childId));
   revalidateActivityViews(activityId);
   return result;
 }
 
 export async function markAbsentAction(activityId: string, childId: string): Promise<ActionResult> {
   await assertActivityAccess(activityId);
-  const result = toResult(() => markAbsent(activityId, childId));
+  const result = await toResult(() => markAbsent(activityId, childId));
   revalidateActivityViews(activityId);
   return result;
 }
 
 export async function markLeftAction(activityId: string, childId: string): Promise<ActionResult> {
   await assertActivityAccess(activityId);
-  const result = toResult(() => markLeft(activityId, childId));
+  const result = await toResult(() => markLeft(activityId, childId));
   revalidateActivityViews(activityId);
   return result;
 }
 
 export async function markStillPresentAction(activityId: string, childId: string): Promise<ActionResult> {
   await assertActivityAccess(activityId);
-  const result = toResult(() => markStillPresent(activityId, childId));
+  const result = await toResult(() => markStillPresent(activityId, childId));
   revalidateActivityViews(activityId);
   return result;
 }
@@ -84,23 +84,21 @@ export async function markStillPresentAction(activityId: string, childId: string
  */
 export async function markGoneFromDaycareAction(activityId: string, childId: string): Promise<ActionResult> {
   await requireUser();
-  const result = toResult(() => markLeft(activityId, childId));
+  const result = await toResult(() => markLeft(activityId, childId));
   revalidateActivityViews(activityId);
   return result;
 }
 
 export async function closeActivityDayAction(activityId: string): Promise<ActionResult> {
   const user = await assertActivityAccess(activityId);
-  const result = toResult(() => closeActivityDay(activityId, user.name));
+  const result = await toResult(() => closeActivityDay(activityId, user.name));
   revalidateActivityViews(activityId);
   return result;
 }
 
-export async function createChildAction(input: NewChildInput): Promise<ActionResult> {
+export async function createChildAction(input: NewChildRecordInput): Promise<ActionResult> {
   await requireUser("ADMIN");
-  const result = toResult(() => {
-    createChild(input);
-  });
+  const result = await toResult(() => createChild(input));
   revalidatePath("/admin/children");
   revalidatePath("/activities");
   return result;
@@ -108,9 +106,7 @@ export async function createChildAction(input: NewChildInput): Promise<ActionRes
 
 export async function updateChildAction(childId: string, input: UpdateChildInput): Promise<ActionResult> {
   await requireUser("ADMIN");
-  const result = toResult(() => {
-    updateChild(childId, input);
-  });
+  const result = await toResult(() => updateChild(childId, input));
   revalidatePath("/admin/children");
   revalidatePath("/activities");
   revalidatePath("/garderie");
@@ -119,9 +115,7 @@ export async function updateChildAction(childId: string, input: UpdateChildInput
 
 export async function setChildActiveAction(childId: string, active: boolean): Promise<ActionResult> {
   await requireUser("ADMIN");
-  const result = toResult(() => {
-    setChildActive(childId, active);
-  });
+  const result = await toResult(() => setChildActive(childId, active));
   revalidatePath("/admin/children");
   revalidatePath("/activities");
   return result;
@@ -129,7 +123,7 @@ export async function setChildActiveAction(childId: string, active: boolean): Pr
 
 export async function assignMonitorAction(activityId: string, monitorId: string): Promise<ActionResult> {
   await requireUser("ADMIN");
-  const result = toResult(() => assignMonitor(activityId, monitorId));
+  const result = await toResult(() => assignMonitor(activityId, monitorId));
   revalidatePath("/admin");
   revalidatePath("/activities");
   revalidatePath(`/activities/${activityId}`);
@@ -138,7 +132,7 @@ export async function assignMonitorAction(activityId: string, monitorId: string)
 
 export async function sendNotificationAction(activityId: string, message: string): Promise<ActionResult> {
   const user = await requireUser("ADMIN");
-  const result = toResult(() => {
+  const result = await toResult(async () => {
     sendNotification(activityId, message, user.name);
   });
   revalidatePath("/notifications");
@@ -149,7 +143,7 @@ export async function sendNotificationAction(activityId: string, message: string
 /** Read state is pushed live over SSE; this just persists it server-side. */
 export async function markNotificationsReadAction(): Promise<ActionResult> {
   const user = await requireUser("MONITOR");
-  const activityId = getActivityIdForMonitor(user.id);
+  const activityId = await getActivityIdForMonitor(user.id);
   if (!activityId) return { ok: false, message: "Aucune activité associée." };
   markNotificationsRead(activityId);
   revalidatePath("/notifications");

@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth/require-user";
 
 export default async function AdminChildrenPage() {
   await requireUser("ADMIN");
-  const children = listChildrenForAdmin();
+  const children = await listChildrenForAdmin();
 
   return (
     <div className="space-y-6">

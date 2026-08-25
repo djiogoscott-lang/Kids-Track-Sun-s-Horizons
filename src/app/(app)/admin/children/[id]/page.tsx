@@ -2,12 +2,12 @@ import { notFound } from "next/navigation";
 import { getChildForAdmin } from "@/features/presence/application/queries";
 import { ChildForm } from "@/features/presence/ui/child-form";
 import { requireUser } from "@/lib/auth/require-user";
-import { ACTIVITIES } from "@/server/demo/data";
+import { getActivitiesList } from "@/server/data-source";
 
 export default async function EditChildPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser("ADMIN");
   const { id } = await params;
-  const child = getChildForAdmin(id);
+  const [child, activities] = await Promise.all([getChildForAdmin(id), getActivitiesList()]);
   if (!child) notFound();
 
   return (
@@ -18,7 +18,7 @@ export default async function EditChildPage({ params }: { params: Promise<{ id: 
         </h1>
       </div>
       <ChildForm
-        activities={ACTIVITIES}
+        activities={activities}
         childId={child.id}
         initial={{
           firstName: child.firstName,

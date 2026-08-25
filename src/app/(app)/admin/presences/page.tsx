@@ -1,5 +1,5 @@
 import { EmptyState } from "@/components/ui/empty-state";
-import { ACTIVITIES } from "@/server/demo/data";
+import { getActivitiesList } from "@/server/data-source";
 import { getActivityDetail } from "@/features/presence/application/queries";
 import { ActivityIcon, activityStyle } from "@/features/presence/ui/activity-icons";
 import { ChildMorningRow } from "@/features/presence/ui/child-morning-row";
@@ -8,7 +8,8 @@ import { requireUser } from "@/lib/auth/require-user";
 
 export default async function AdminPresencesPage() {
   await requireUser("ADMIN");
-  const activities = ACTIVITIES.map((a) => getActivityDetail(a.id)).filter((a) => a !== null);
+  const activityList = await getActivitiesList();
+  const activities = (await Promise.all(activityList.map((a) => getActivityDetail(a.id)))).filter((a) => a !== null);
   const total = activities.reduce((sum, a) => sum + a.morningCounters.total, 0);
   const arrived = activities.reduce((sum, a) => sum + a.morningCounters.arrivedCount, 0);
   const absent = activities.reduce((sum, a) => sum + a.morningCounters.absentCount, 0);

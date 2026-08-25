@@ -2,11 +2,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { listAssignments } from "@/features/presence/application/queries";
 import { AssignmentForm } from "@/features/presence/ui/assignment-form";
 import { requireUser } from "@/lib/auth/require-user";
-import { MONITORS } from "@/server/demo/data";
+import { getMonitorsList } from "@/server/data-source";
 
 export default async function AdminMonitorsPage() {
   await requireUser("ADMIN");
-  const assignments = listAssignments();
+  const [assignments, monitors] = await Promise.all([listAssignments(), getMonitorsList()]);
 
   return (
     <div className="space-y-6">
@@ -18,7 +18,7 @@ export default async function AdminMonitorsPage() {
       <Card>
         <CardContent className="p-0">
           {assignments.map((assignment) => (
-            <AssignmentForm key={assignment.activityId} assignment={assignment} monitors={MONITORS} />
+            <AssignmentForm key={assignment.activityId} assignment={assignment} monitors={monitors} />
           ))}
         </CardContent>
       </Card>

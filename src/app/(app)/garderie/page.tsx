@@ -10,7 +10,7 @@ import { formatTime } from "@/lib/format";
 export default async function GarderiePage() {
   await requireUser();
   const now = new Date();
-  const children = getDaycareList(now);
+  const children = await getDaycareList(now);
 
   return (
     <div className="animate-float-in space-y-6">

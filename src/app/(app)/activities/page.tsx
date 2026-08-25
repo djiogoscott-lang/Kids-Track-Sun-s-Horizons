@@ -7,11 +7,11 @@ export default async function ActivitiesPage() {
   const user = await requireUser();
 
   if (user.role === "MONITOR") {
-    const activityId = getActivityIdForMonitor(user.id);
+    const activityId = await getActivityIdForMonitor(user.id);
     if (activityId) redirect(`/activities/${activityId}`);
   }
 
-  const activities = listActivitiesOverview();
+  const activities = await listActivitiesOverview();
 
   return (
     <div className="space-y-6">

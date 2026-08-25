@@ -26,10 +26,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const monitorActivityId = user.role === "MONITOR" ? getActivityIdForMonitor(user.id) : null;
+  const monitorActivityId = user.role === "MONITOR" ? await getActivityIdForMonitor(user.id) : null;
   const rawNotifications =
     user.role === "ADMIN"
-      ? getAllNotificationsForAdmin()
+      ? await getAllNotificationsForAdmin()
       : monitorActivityId
         ? getNotificationsForMonitor(monitorActivityId)
         : [];

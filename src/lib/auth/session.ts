@@ -46,6 +46,6 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 export async function resolveHomePath(user: CurrentUser): Promise<string> {
   if (user.role === "ADMIN") return "/activities";
   const { getActivityIdForMonitor } = await import("@/features/presence/application/queries");
-  const activityId = getActivityIdForMonitor(user.id);
+  const activityId = await getActivityIdForMonitor(user.id);
   return activityId ? `/activities/${activityId}` : "/activities";
 }

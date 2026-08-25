@@ -1,18 +1,14 @@
-import { ACTIVITIES, MONITORS } from "@/server/demo/data";
 import { getActivityDayState } from "@/server/demo/activity-day-store";
-import { getChild, getChildren } from "@/server/demo/children-store";
 import { getAllNotifications, getNotificationsForActivity, getUnreadCountForActivity, type Notification } from "@/server/demo/notifications-store";
-import { getActivityAssignments, getPresenceRecords } from "@/server/demo/store";
+import { getPresenceRecords } from "@/server/demo/store";
+import { getActivitiesList, getChildById, getChildrenList, getMonitorsList } from "@/server/data-source";
 import { daycareReason, eveningStatus, type DaycareReason } from "@/features/presence/domain/daycare";
 import { morningStatus } from "@/features/presence/domain/types";
 import type { EveningStatus, MorningStatus } from "@/features/presence/domain/types";
 
-function monitorName(monitorId: string): string {
-  return MONITORS.find((m) => m.id === monitorId)?.name ?? "Moniteur";
-}
-
-function currentMonitorId(activityId: string): string | undefined {
-  return getActivityAssignments().get(activityId);
+async function monitorName(monitorId: string): Promise<string> {
+  const monitors = await getMonitorsList();
+  return monitors.find((m) => m.id === monitorId)?.name ?? "Moniteur";
 }
 
 function sortByName<T extends { firstName: string; lastName: string }>(children: T[]): T[] {
@@ -29,22 +25,24 @@ export interface ActivityOverview {
   closed: boolean;
 }
 
-export function listActivitiesOverview(): ActivityOverview[] {
-  const records = getPresenceRecords();
+export async function listActivitiesOverview(): Promise<ActivityOverview[]> {
+  const [activities, allChildren, records] = await Promise.all([getActivitiesList(), getChildrenList(), getPresenceRecords()]);
 
-  return ACTIVITIES.map((activity) => {
-    const children = getChildren().filter((c) => c.activityId === activity.id && c.active);
-    const arrivedCount = children.filter((c) => records.get(c.id)?.arrived).length;
-    return {
-      id: activity.id,
-      name: activity.name,
-      monitorName: monitorName(currentMonitorId(activity.id) ?? ""),
-      total: children.length,
-      arrivedCount,
-      absentCount: children.length - arrivedCount,
-      closed: getActivityDayState(activity.id).closed,
-    };
-  });
+  return Promise.all(
+    activities.map(async (activity) => {
+      const children = allChildren.filter((c) => c.activityId === activity.id && c.active);
+      const arrivedCount = children.filter((c) => records.get(c.id)?.arrived).length;
+      return {
+        id: activity.id,
+        name: activity.name,
+        monitorName: await monitorName(activity.monitorId ?? ""),
+        total: children.length,
+        arrivedCount,
+        absentCount: children.length - arrivedCount,
+        closed: getActivityDayState(activity.id).closed,
+      };
+    }),
+  );
 }
 
 export interface ChildMorningRow {
@@ -79,13 +77,14 @@ export interface ActivityDetail {
   eveningList: ChildEveningRow[];
 }
 
-export function getActivityDetail(activityId: string, now = new Date()): ActivityDetail | null {
-  const activity = ACTIVITIES.find((a) => a.id === activityId);
+export async function getActivityDetail(activityId: string, now = new Date()): Promise<ActivityDetail | null> {
+  const activities = await getActivitiesList();
+  const activity = activities.find((a) => a.id === activityId);
   if (!activity) return null;
 
   const dayState = getActivityDayState(activityId);
-  const records = getPresenceRecords();
-  const children = sortByName(getChildren().filter((c) => c.activityId === activityId && c.active));
+  const [records, allChildren] = await Promise.all([getPresenceRecords(), getChildrenList()]);
+  const children = sortByName(allChildren.filter((c) => c.activityId === activityId && c.active));
 
   const morningList: ChildMorningRow[] = children.map((child) => {
     const record = records.get(child.id)!;
@@ -105,7 +104,7 @@ export function getActivityDetail(activityId: string, now = new Date()): Activit
   return {
     id: activity.id,
     name: activity.name,
-    monitorName: monitorName(currentMonitorId(activity.id) ?? ""),
+    monitorName: await monitorName(activity.monitorId ?? ""),
     closed: dayState.closed,
     closedAt: dayState.closedAt,
     morningCounters: { total: morningList.length, arrivedCount, absentCount: morningList.length - arrivedCount },
@@ -119,12 +118,9 @@ export function getActivityDetail(activityId: string, now = new Date()): Activit
   };
 }
 
-export function getActivityIdForMonitor(monitorId: string): string | null {
-  const assignments = getActivityAssignments();
-  for (const [activityId, assignedMonitorId] of assignments) {
-    if (assignedMonitorId === monitorId) return activityId;
-  }
-  return null;
+export async function getActivityIdForMonitor(monitorId: string): Promise<string | null> {
+  const activities = await getActivitiesList();
+  return activities.find((a) => a.monitorId === monitorId)?.id ?? null;
 }
 
 export interface AssignmentRow {
@@ -133,11 +129,12 @@ export interface AssignmentRow {
   monitorId: string;
 }
 
-export function listAssignments(): AssignmentRow[] {
-  return ACTIVITIES.map((activity) => ({
+export async function listAssignments(): Promise<AssignmentRow[]> {
+  const activities = await getActivitiesList();
+  return activities.map((activity) => ({
     activityId: activity.id,
     activityName: activity.name,
-    monitorId: currentMonitorId(activity.id) ?? "",
+    monitorId: activity.monitorId ?? "",
   }));
 }
 
@@ -151,15 +148,15 @@ export interface DaycareRow {
 }
 
 /** The Garderie list is global, not per-activity: children converge here from every activity. */
-export function getDaycareList(now = new Date()): DaycareRow[] {
-  const records = getPresenceRecords();
+export async function getDaycareList(now = new Date()): Promise<DaycareRow[]> {
+  const [records, allChildren, activities] = await Promise.all([getPresenceRecords(), getChildrenList(), getActivitiesList()]);
   const rows: DaycareRow[] = [];
 
-  for (const child of getChildren()) {
+  for (const child of allChildren) {
     if (!child.active) continue;
     const record = records.get(child.id);
     if (!record) continue;
-    const activity = ACTIVITIES.find((a) => a.id === child.activityId);
+    const activity = activities.find((a) => a.id === child.activityId);
     if (!activity) continue;
 
     const reason = daycareReason(record, child.daycareAuto, getActivityDayState(child.activityId).closed, now);
@@ -186,16 +183,20 @@ export interface DashboardSummary {
   activities: ActivityOverview[];
 }
 
-export function getDashboardSummary(now = new Date()): DashboardSummary {
-  const activities = listActivitiesOverview();
-  const records = getPresenceRecords();
-  const children = getChildren().filter((c) => c.active);
+export async function getDashboardSummary(now = new Date()): Promise<DashboardSummary> {
+  const [activities, records, allChildren, daycare] = await Promise.all([
+    listActivitiesOverview(),
+    getPresenceRecords(),
+    getChildrenList(),
+    getDaycareList(now),
+  ]);
+  const children = allChildren.filter((c) => c.active);
 
   return {
     childrenToday: children.length,
     presentCount: children.filter((c) => records.get(c.id)?.arrived && !records.get(c.id)?.left).length,
     absentCount: children.filter((c) => !records.get(c.id)?.arrived).length,
-    daycareCount: getDaycareList(now).length,
+    daycareCount: daycare.length,
     activities,
   };
 }
@@ -212,10 +213,11 @@ export interface NotificationRow extends Notification {
   activityName: string;
 }
 
-export function getAllNotificationsForAdmin(): NotificationRow[] {
+export async function getAllNotificationsForAdmin(): Promise<NotificationRow[]> {
+  const activities = await getActivitiesList();
   return getAllNotifications().map((n) => ({
     ...n,
-    activityName: ACTIVITIES.find((a) => a.id === n.activityId)?.name ?? "Activité",
+    activityName: activities.find((a) => a.id === n.activityId)?.name ?? "Activité",
   }));
 }
 
@@ -230,15 +232,16 @@ export interface ChildAdminRow {
   notes: string;
 }
 
-export function listChildrenForAdmin(): ChildAdminRow[] {
-  return sortByName(getChildren()).map((child) => ({
+export async function listChildrenForAdmin(): Promise<ChildAdminRow[]> {
+  const [allChildren, activities] = await Promise.all([getChildrenList(), getActivitiesList()]);
+  return sortByName(allChildren).map((child) => ({
     ...child,
-    activityName: ACTIVITIES.find((a) => a.id === child.activityId)?.name ?? "Activité",
+    activityName: activities.find((a) => a.id === child.activityId)?.name ?? "Activité",
   }));
 }
 
-export function getChildForAdmin(childId: string): ChildAdminRow | null {
-  const child = getChild(childId);
+export async function getChildForAdmin(childId: string): Promise<ChildAdminRow | null> {
+  const [child, activities] = await Promise.all([getChildById(childId), getActivitiesList()]);
   if (!child) return null;
-  return { ...child, activityName: ACTIVITIES.find((a) => a.id === child.activityId)?.name ?? "Activité" };
+  return { ...child, activityName: activities.find((a) => a.id === child.activityId)?.name ?? "Activité" };
 }

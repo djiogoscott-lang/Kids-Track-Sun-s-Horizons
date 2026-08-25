@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { assignMonitorAction } from "@/features/presence/ui/actions";
 import type { AssignmentRow } from "@/features/presence/application/queries";
-import type { Monitor } from "@/server/demo/data";
+import type { MonitorRecord as Monitor } from "@/server/data-source";
 
 export function AssignmentForm({ assignment, monitors }: { assignment: AssignmentRow; monitors: Monitor[] }) {
   const [monitorId, setMonitorId] = useState(assignment.monitorId);

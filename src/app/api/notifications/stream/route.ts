@@ -16,7 +16,7 @@ export async function GET() {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const activityId = getActivityIdForMonitor(user.id);
+  const activityId = await getActivityIdForMonitor(user.id);
   if (!activityId) {
     return new Response("No activity assigned", { status: 404 });
   }
