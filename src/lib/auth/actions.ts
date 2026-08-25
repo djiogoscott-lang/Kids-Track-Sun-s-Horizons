@@ -4,12 +4,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { DEMO_SESSION_COOKIE, encodeDemoSession } from "@/lib/auth/demo-session";
 import { resolveHomePath } from "@/lib/auth/session";
-import { isSupabaseConfigured } from "@/lib/env";
+import { isSupabaseAuthEnabled } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { DEMO_USERS } from "@/server/demo/data";
 
 export async function signInDemoAction(userId: string) {
-  if (isSupabaseConfigured) return;
+  if (isSupabaseAuthEnabled) return;
 
   const user = DEMO_USERS.find((u) => u.id === userId);
   if (!user) return;
@@ -26,7 +26,7 @@ export async function signInDemoAction(userId: string) {
 }
 
 export async function signOutAction() {
-  if (isSupabaseConfigured) {
+  if (isSupabaseAuthEnabled) {
     const supabase = await createClient();
     await supabase.auth.signOut();
   } else {

@@ -4,7 +4,7 @@ import { LoginForm } from "@/components/auth/login-form";
 import { SunsHorizonsMark } from "@/components/brand/suns-horizons-mark";
 import { Card, CardContent } from "@/components/ui/card";
 import { getCurrentUser, resolveHomePath } from "@/lib/auth/session";
-import { isSupabaseConfigured } from "@/lib/env";
+import { isSupabaseAuthEnabled } from "@/lib/env";
 
 export default async function LoginPage() {
   const user = await getCurrentUser();
@@ -20,7 +20,7 @@ export default async function LoginPage() {
             <h1 className="font-heading mt-5 text-2xl font-bold tracking-tight text-[var(--foreground)]">Bienvenue</h1>
             <p className="mt-1.5 text-sm text-[var(--muted)]">Accédez à votre espace de gestion.</p>
           </div>
-          <CardContent className="pt-6">{isSupabaseConfigured ? <LoginForm /> : <DemoLoginOptions />}</CardContent>
+          <CardContent className="pt-6">{isSupabaseAuthEnabled ? <LoginForm /> : <DemoLoginOptions />}</CardContent>
         </Card>
       </div>
     </main>

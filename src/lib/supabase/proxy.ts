@@ -1,11 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isSupabaseConfigured, supabasePublishableKey, supabaseUrl } from "@/lib/env";
+import { isSupabaseAuthEnabled, supabasePublishableKey, supabaseUrl } from "@/lib/env";
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  if (!isSupabaseConfigured) return response;
+  if (!isSupabaseAuthEnabled) return response;
 
   const supabase = createServerClient(
     supabaseUrl!,

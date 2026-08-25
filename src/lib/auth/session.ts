@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import type { UserRole } from "@/lib/constants/roles";
 import { DEMO_SESSION_COOKIE, decodeDemoSession } from "@/lib/auth/demo-session";
-import { isSupabaseConfigured } from "@/lib/env";
+import { isSupabaseAuthEnabled } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
 export interface CurrentUser {
@@ -11,7 +11,7 @@ export interface CurrentUser {
 }
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  if (!isSupabaseConfigured) {
+  if (!isSupabaseAuthEnabled) {
     const cookieStore = await cookies();
     const payload = await decodeDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
     return payload ? { id: payload.userId, name: payload.name, role: payload.role } : null;
