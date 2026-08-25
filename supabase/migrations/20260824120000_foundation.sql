@@ -345,18 +345,24 @@ create policy memberships_update_administrators
   using (public.is_organization_admin(organization_id))
   with check (public.is_organization_admin(organization_id));
 
-create policy activities_read_org_members
+-- Not is_active_organization_member: that would let any monitor read every
+-- activity in the org, not just the one they're assigned to. Caught by the
+-- RLS test suite (see notes) — a monitor could list and read-by-id another
+-- activity's row even though they could never write to it.
+create policy activities_read_scope
   on public.activities for select
-  using (public.is_active_organization_member(organization_id));
+  using (public.is_organization_admin(organization_id) or public.is_activity_monitor(id));
 
 create policy activities_write_administrators
   on public.activities for all
   using (public.is_organization_admin(organization_id))
   with check (public.is_organization_admin(organization_id));
 
-create policy children_read_org_members
+-- Same reasoning as activities_read_scope above: scoped to the monitor's own
+-- activity, not just organization membership.
+create policy children_read_scope
   on public.children for select
-  using (public.is_active_organization_member(organization_id));
+  using (public.is_organization_admin(organization_id) or public.is_activity_monitor(activity_id));
 
 create policy children_write_administrators
   on public.children for all
