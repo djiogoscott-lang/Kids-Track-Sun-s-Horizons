@@ -8,7 +8,7 @@ import { HelpMenu } from "@/features/onboarding/help-menu";
 import { OnboardingProvider } from "@/features/onboarding/onboarding-provider";
 import { ADMIN_STEPS, MONITOR_STEPS } from "@/features/onboarding/steps";
 import { NotificationsProvider } from "@/features/notifications/notifications-provider";
-import { getActivityIdForMonitor, getNotificationsForMonitor } from "@/features/presence/application/queries";
+import { getActivityIdForMonitor, getAllNotificationsForAdmin, getNotificationsForMonitor } from "@/features/presence/application/queries";
 import { signOutAction } from "@/lib/auth/actions";
 import { getCurrentUser } from "@/lib/auth/session";
 
@@ -27,16 +27,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect("/login");
 
   const monitorActivityId = user.role === "MONITOR" ? getActivityIdForMonitor(user.id) : null;
-  const initialNotifications =
-    user.role === "MONITOR" && monitorActivityId
-      ? getNotificationsForMonitor(monitorActivityId).map((n) => ({
-          id: n.id,
-          message: n.message,
-          createdAt: n.createdAt,
-          createdBy: n.createdBy,
-          read: n.read,
-        }))
-      : [];
+  const rawNotifications =
+    user.role === "ADMIN"
+      ? getAllNotificationsForAdmin()
+      : monitorActivityId
+        ? getNotificationsForMonitor(monitorActivityId)
+        : [];
+  const initialNotifications = rawNotifications.map((n) => ({
+    id: n.id,
+    message: n.message,
+    createdAt: n.createdAt,
+    createdBy: n.createdBy,
+    read: n.read,
+  }));
 
   const shell = (
     <div className="min-h-screen bg-[var(--background)]">
@@ -110,8 +113,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     </OnboardingProvider>
   );
 
-  if (user.role === "MONITOR") {
-    return <NotificationsProvider initialNotifications={initialNotifications}>{withOnboarding}</NotificationsProvider>;
-  }
-  return withOnboarding;
+  return (
+    <NotificationsProvider initialNotifications={initialNotifications} live={user.role === "MONITOR"}>
+      {withOnboarding}
+    </NotificationsProvider>
+  );
 }

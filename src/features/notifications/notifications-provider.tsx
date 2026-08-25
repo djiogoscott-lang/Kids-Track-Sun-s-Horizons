@@ -29,9 +29,12 @@ type StreamEvent = { type: "new"; notification: NotificationView } | { type: "re
 
 export function NotificationsProvider({
   initialNotifications,
+  live = true,
   children,
 }: {
   initialNotifications: NotificationView[];
+  /** Only monitors have a single assigned activity for /api/notifications/stream to scope to — it 401s anyone else, so admins get the initial snapshot without opening a doomed connection. */
+  live?: boolean;
   children: React.ReactNode;
 }) {
   const [notifications, setNotifications] = useState(initialNotifications);
@@ -39,6 +42,7 @@ export function NotificationsProvider({
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!live) return;
     const source = new EventSource("/api/notifications/stream");
 
     source.onmessage = (event) => {
@@ -55,7 +59,7 @@ export function NotificationsProvider({
     };
 
     return () => source.close();
-  }, []);
+  }, [live]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
