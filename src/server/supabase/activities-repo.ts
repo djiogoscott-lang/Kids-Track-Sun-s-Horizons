@@ -24,9 +24,12 @@ export interface SupabaseMonitor {
 
 export async function getMonitors(): Promise<SupabaseMonitor[]> {
   const supabase = getServiceRoleClient();
+  // organization_memberships has three foreign keys into profiles (user_id,
+  // created_by, revoked_by), so the embed must name which one — PostgREST
+  // otherwise refuses the query outright (PGRST201) rather than guessing.
   const { data, error } = await supabase
     .from("organization_memberships")
-    .select("user_id, profiles(full_name)")
+    .select("user_id, profiles!organization_memberships_user_id_fkey(full_name)")
     .eq("organization_id", ORGANIZATION_ID)
     .eq("role", "MONITOR")
     .is("revoked_at", null);

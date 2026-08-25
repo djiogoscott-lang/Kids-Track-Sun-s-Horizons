@@ -6,9 +6,20 @@ import { daycareReason, eveningStatus, type DaycareReason } from "@/features/pre
 import { morningStatus } from "@/features/presence/domain/types";
 import type { EveningStatus, MorningStatus } from "@/features/presence/domain/types";
 
+/**
+ * The monitor's name is a label, not something a whole page should die over.
+ * If the lookup fails (a bad query, a transient Supabase error), every
+ * caller of this function falls back to "Moniteur" instead of taking the
+ * entire page down with it.
+ */
 async function monitorName(monitorId: string): Promise<string> {
-  const monitors = await getMonitorsList();
-  return monitors.find((m) => m.id === monitorId)?.name ?? "Moniteur";
+  try {
+    const monitors = await getMonitorsList();
+    return monitors.find((m) => m.id === monitorId)?.name ?? "Moniteur";
+  } catch (error) {
+    console.error("monitorName lookup failed, falling back to a generic label:", error);
+    return "Moniteur";
+  }
 }
 
 function sortByName<T extends { firstName: string; lastName: string }>(children: T[]): T[] {
