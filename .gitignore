@@ -9,3 +9,6 @@ coverage/
 .DS_Store
 *.log
 *.tsbuildinfo
+
+# Supabase CLI local cache
+supabase/.temp/
