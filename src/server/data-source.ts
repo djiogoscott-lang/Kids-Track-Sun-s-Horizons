@@ -31,6 +31,10 @@ import * as supaActivities from "@/server/supabase/activities-repo";
 import * as supaAttendance from "@/server/supabase/attendance-repo";
 import * as supaChildren from "@/server/supabase/children-repo";
 import * as supaDayState from "@/server/supabase/activity-day-state-repo";
+import * as supaNotifications from "@/server/supabase/notifications-repo";
+import * as demoNotifications from "@/server/demo/notifications-store";
+import * as supaMonitors from "@/server/supabase/monitors-repo";
+import { PresenceCommandError } from "@/features/presence/application/errors";
 
 export interface ActivityRecord {
   id: string;
@@ -250,4 +254,92 @@ export async function closeDay(activityId: string, date: Date, closedByUserId: s
   }
   const realClosedBy = await resolveRealUserId(closedByUserId);
   return supaDayState.closeDay(activityId, date, realClosedBy);
+}
+
+// ---------------------------------------------------------------------------
+// Notifications — same demo/Supabase split as everything else here. The demo
+// store is in-process memory (an EventEmitter + array on globalThis), which
+// only ever worked because local dev runs a single long-lived process; it
+// cannot be the source of truth for anything meant to survive a restart or
+// run correctly across Vercel's independent serverless instances. Supabase
+// mode is the one production actually depends on.
+// ---------------------------------------------------------------------------
+
+export interface NotificationRecord {
+  id: string;
+  activityId: string;
+  message: string;
+  createdAt: Date;
+  createdBy: string;
+  read: boolean;
+  readAt: Date | null;
+}
+
+export async function getNotificationsForActivityData(activityId: string): Promise<NotificationRecord[]> {
+  if (!isSupabaseConfigured) return demoNotifications.getNotificationsForActivity(activityId);
+  return supaNotifications.getNotificationsForActivity(activityId);
+}
+
+export async function getUnreadCountForActivityData(activityId: string): Promise<number> {
+  if (!isSupabaseConfigured) return demoNotifications.getUnreadCountForActivity(activityId);
+  return supaNotifications.getUnreadCountForActivity(activityId);
+}
+
+export async function getAllNotificationsData(): Promise<NotificationRecord[]> {
+  if (!isSupabaseConfigured) return demoNotifications.getAllNotifications();
+  return supaNotifications.getAllNotifications();
+}
+
+/** createdByName is what demo mode stores (it has no real user ids);
+ * createdByUserId is what Supabase mode stores (a real profiles.id FK). */
+export async function addNotificationRecord(
+  activityId: string,
+  message: string,
+  createdByUserId: string,
+  createdByName: string,
+): Promise<NotificationRecord> {
+  if (!isSupabaseConfigured) return demoNotifications.addNotification(activityId, message, createdByName);
+  const realCreatedBy = await resolveRealUserId(createdByUserId);
+  return supaNotifications.addNotification(activityId, message, realCreatedBy);
+}
+
+export async function markActivityNotificationsReadData(activityId: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    demoNotifications.markActivityNotificationsRead(activityId);
+    return;
+  }
+  return supaNotifications.markActivityNotificationsRead(activityId);
+}
+
+// ---------------------------------------------------------------------------
+// Monitor account administration (activate/deactivate) — Supabase-only.
+// Demo mode has no real accounts to deactivate, so it reports everyone
+// active and refuses the toggle with a clear error rather than pretending.
+// ---------------------------------------------------------------------------
+
+export interface MonitorAdminRecord {
+  id: string;
+  name: string;
+  email: string | null;
+  activityId: string | null;
+  activityName: string | null;
+  active: boolean;
+}
+
+export async function getMonitorsForAdminList(): Promise<MonitorAdminRecord[]> {
+  if (!isSupabaseConfigured) {
+    return MONITORS.map((m) => ({ id: m.id, name: m.name, email: null, activityId: null, activityName: null, active: true }));
+  }
+  return supaMonitors.getMonitorsForAdmin();
+}
+
+export async function setMonitorActiveRecord(monitorId: string, active: boolean, actingAdminId: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new PresenceCommandError("La désactivation d'un moniteur nécessite Supabase.");
+  }
+  const realActingAdminId = await resolveRealUserId(actingAdminId);
+  if (!realActingAdminId) {
+    throw new PresenceCommandError("Impossible de déterminer l'administrateur à l'origine de cette action.");
+  }
+  return supaMonitors.setMonitorActive(monitorId, active, realActingAdminId);
 }

@@ -1,5 +1,18 @@
-import { getAllNotifications, getNotificationsForActivity, getUnreadCountForActivity, type Notification } from "@/server/demo/notifications-store";
-import { getActivitiesList, getAttendanceMap, getChildById, getChildrenList, getDayState, getDayStatesForDate, getMonitorsList } from "@/server/data-source";
+import {
+  getActivitiesList,
+  getAllNotificationsData,
+  getAttendanceMap,
+  getChildById,
+  getChildrenList,
+  getDayState,
+  getDayStatesForDate,
+  getMonitorsForAdminList,
+  getMonitorsList,
+  getNotificationsForActivityData,
+  getUnreadCountForActivityData,
+  type MonitorAdminRecord,
+  type NotificationRecord,
+} from "@/server/data-source";
 import { daycareReason, eveningStatus, type DaycareReason } from "@/features/presence/domain/daycare";
 import { morningStatus, type PresenceRecord } from "@/features/presence/domain/types";
 import type { EveningStatus, MorningStatus } from "@/features/presence/domain/types";
@@ -183,6 +196,10 @@ export async function listAssignments(): Promise<AssignmentRow[]> {
   }));
 }
 
+export async function listMonitorsForAdmin(): Promise<MonitorAdminRecord[]> {
+  return getMonitorsForAdminList();
+}
+
 export interface DaycareRow {
   childId: string;
   firstName: string;
@@ -226,21 +243,21 @@ export async function getDaycareList(now = new Date()): Promise<DaycareRow[]> {
   return sortByName(rows);
 }
 
-export function getNotificationsForMonitor(activityId: string): Notification[] {
-  return getNotificationsForActivity(activityId);
+export async function getNotificationsForMonitor(activityId: string): Promise<NotificationRecord[]> {
+  return getNotificationsForActivityData(activityId);
 }
 
-export function getUnreadNotificationCount(activityId: string): number {
-  return getUnreadCountForActivity(activityId);
+export async function getUnreadNotificationCount(activityId: string): Promise<number> {
+  return getUnreadCountForActivityData(activityId);
 }
 
-export interface NotificationRow extends Notification {
+export interface NotificationRow extends NotificationRecord {
   activityName: string;
 }
 
 export async function getAllNotificationsForAdmin(): Promise<NotificationRow[]> {
-  const activities = await getActivitiesList();
-  return getAllNotifications().map((n) => ({
+  const [activities, notifications] = await Promise.all([getActivitiesList(), getAllNotificationsData()]);
+  return notifications.map((n) => ({
     ...n,
     activityName: activities.find((a) => a.id === n.activityId)?.name ?? "Activité",
   }));

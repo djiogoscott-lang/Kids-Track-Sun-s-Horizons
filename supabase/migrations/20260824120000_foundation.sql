@@ -273,6 +273,12 @@ as $$
   );
 $$;
 
+-- Checking activity.monitor_id alone is not enough: it says who is assigned,
+-- not whether that assignment is still live. A deactivated monitor keeps
+-- their monitor_id row until reassigned, so this also requires an active
+-- (non-revoked) MONITOR membership — the same thing getCurrentUser() already
+-- checks at the session layer (lib/auth/session.ts), enforced again here so
+-- a still-valid JWT can't read past a revoked membership at the RLS layer.
 create or replace function public.is_activity_monitor(target_activity_id uuid)
 returns boolean
 language sql
@@ -283,6 +289,11 @@ as $$
   select exists (
     select 1
     from public.activities as activity
+    join public.organization_memberships as membership
+      on membership.organization_id = activity.organization_id
+      and membership.user_id = auth.uid()
+      and membership.role = 'MONITOR'
+      and membership.revoked_at is null
     where activity.id = target_activity_id
       and activity.monitor_id = auth.uid()
   );

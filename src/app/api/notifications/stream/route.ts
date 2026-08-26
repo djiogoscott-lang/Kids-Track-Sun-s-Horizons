@@ -1,5 +1,7 @@
 import { getActivityIdForMonitor } from "@/features/presence/application/queries";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isSupabaseConfigured } from "@/lib/env";
+import { getServiceRoleClient } from "@/lib/supabase/service";
 import { subscribeToActivity, type NotificationEvent } from "@/server/demo/notifications-store";
 
 // Server-Sent Events, not WebSocket or polling: the flow is one-way
@@ -22,7 +24,7 @@ export async function GET() {
   }
 
   const encoder = new TextEncoder();
-  let unsubscribe: (() => void) | null = null;
+  let cleanup: (() => void) | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   const stream = new ReadableStream({
@@ -30,11 +32,58 @@ export async function GET() {
       const send = (event: NotificationEvent) => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       };
-      unsubscribe = subscribeToActivity(activityId, send);
       heartbeat = setInterval(() => controller.enqueue(encoder.encode(`: ping\n\n`)), HEARTBEAT_MS);
+
+      if (!isSupabaseConfigured) {
+        // Dev-only fallback: an in-process EventEmitter only works because
+        // local dev is a single long-lived process. It cannot be relied on
+        // in production — see the Supabase branch below.
+        cleanup = subscribeToActivity(activityId, send);
+        return;
+      }
+
+      // Each SSE connection opens its own outbound Realtime subscription to
+      // Supabase — unlike the in-process EventEmitter this doesn't depend on
+      // the publisher (a Server Action) and this subscriber running in the
+      // same instance, which is never guaranteed on Vercel's serverless
+      // model. This is what public.notifications was already added to the
+      // supabase_realtime publication for (see the foundation migration).
+      const supabase = getServiceRoleClient();
+      const channel = supabase
+        // Unique per connection: two tabs on the same activity must not
+        // share one Realtime channel object on the cached shared client.
+        .channel(`notifications-activity-${activityId}-${crypto.randomUUID()}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "notifications", filter: `activity_id=eq.${activityId}` },
+          (payload) => {
+            const row = payload.new as { id: string; message: string; created_at: string };
+            send({
+              type: "new",
+              notification: {
+                id: row.id,
+                activityId,
+                message: row.message,
+                createdAt: new Date(row.created_at),
+                createdBy: "Administrateur",
+                read: false,
+                readAt: null,
+              },
+            });
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "notifications", filter: `activity_id=eq.${activityId}` },
+          () => send({ type: "read", activityId }),
+        )
+        .subscribe();
+      cleanup = () => {
+        supabase.removeChannel(channel);
+      };
     },
     cancel() {
-      unsubscribe?.();
+      cleanup?.();
       if (heartbeat) clearInterval(heartbeat);
     },
   });

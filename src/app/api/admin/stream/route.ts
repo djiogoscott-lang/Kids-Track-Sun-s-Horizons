@@ -1,9 +1,14 @@
 import { getCurrentUser } from "@/lib/auth/session";
+import { isSupabaseConfigured } from "@/lib/env";
+import { getServiceRoleClient } from "@/lib/supabase/service";
 import { subscribeToAdminUpdates, type AdminLiveEvent } from "@/server/demo/notifications-store";
 
-// Same SSE + shared EventEmitter approach as /api/notifications/stream, on a
-// second reserved channel — not a second real-time system, one admin
-// connection replaces what would otherwise be one EventSource per activity.
+// Same SSE approach as /api/notifications/stream. In Supabase mode this
+// subscribes directly to Postgres changes on attendance and
+// activity_day_state (both already in the supabase_realtime publication) —
+// not a second real-time system, just the same "one server-side subscription
+// per open admin tab" pattern, sourced from Postgres instead of an in-process
+// EventEmitter that can't be relied on across Vercel's serverless instances.
 export const dynamic = "force-dynamic";
 
 const HEARTBEAT_MS = 25_000;
@@ -15,7 +20,7 @@ export async function GET() {
   }
 
   const encoder = new TextEncoder();
-  let unsubscribe: (() => void) | null = null;
+  let cleanup: (() => void) | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   const stream = new ReadableStream({
@@ -23,11 +28,33 @@ export async function GET() {
       const send = (event: AdminLiveEvent) => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       };
-      unsubscribe = subscribeToAdminUpdates(send);
       heartbeat = setInterval(() => controller.enqueue(encoder.encode(`: ping\n\n`)), HEARTBEAT_MS);
+
+      if (!isSupabaseConfigured) {
+        cleanup = subscribeToAdminUpdates(send);
+        return;
+      }
+
+      const supabase = getServiceRoleClient();
+      const channel = supabase
+        // Unique per connection: two admin tabs must not share one
+        // Realtime channel object on the cached shared client.
+        .channel(`admin-live-attendance-and-closure-${crypto.randomUUID()}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, (payload) => {
+          const row = (payload.new ?? payload.old) as { activity_id: string };
+          send({ activityId: row.activity_id });
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "activity_day_state" }, (payload) => {
+          const row = (payload.new ?? payload.old) as { activity_id: string };
+          send({ activityId: row.activity_id });
+        })
+        .subscribe();
+      cleanup = () => {
+        supabase.removeChannel(channel);
+      };
     },
     cancel() {
-      unsubscribe?.();
+      cleanup?.();
       if (heartbeat) clearInterval(heartbeat);
     },
   });

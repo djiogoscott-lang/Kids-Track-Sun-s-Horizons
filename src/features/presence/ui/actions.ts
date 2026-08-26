@@ -12,6 +12,7 @@ import {
   markStillPresent,
   sendNotification,
   setChildActive,
+  setMonitorActive,
   updateChild,
   type UpdateChildInput,
 } from "@/features/presence/application/commands";
@@ -138,22 +139,29 @@ export async function assignMonitorAction(activityId: string, monitorId: string)
   return result;
 }
 
+export async function setMonitorActiveAction(monitorId: string, active: boolean): Promise<ActionResult> {
+  const admin = await requireUser("ADMIN");
+  const result = await toResult(() => setMonitorActive(monitorId, active, admin.id));
+  revalidatePath("/admin/monitors");
+  return result;
+}
+
 export async function sendNotificationAction(activityId: string, message: string): Promise<ActionResult> {
   const user = await requireUser("ADMIN");
   const result = await toResult(async () => {
-    sendNotification(activityId, message, user.name);
+    await sendNotification(activityId, message, user.id, user.name);
   });
   revalidatePath("/notifications");
   revalidatePath("/admin/notifications");
   return result;
 }
 
-/** Read state is pushed live over SSE; this just persists it server-side. */
+/** Read state is pushed live over realtime; this just persists it server-side. */
 export async function markNotificationsReadAction(): Promise<ActionResult> {
   const user = await requireUser("MONITOR");
   const activityId = await getActivityIdForMonitor(user.id);
   if (!activityId) return { ok: false, message: "Aucune activité associée." };
-  markNotificationsRead(activityId);
+  await markNotificationsRead(activityId);
   revalidatePath("/notifications");
   return { ok: true };
 }

@@ -1,5 +1,5 @@
-import { addNotification, markActivityNotificationsRead } from "@/server/demo/notifications-store";
 import {
+  addNotificationRecord,
   closeDay,
   createChildRecord,
   getActivitiesList,
@@ -7,7 +7,9 @@ import {
   getChildById,
   getDayState,
   getMonitorsList,
+  markActivityNotificationsReadData,
   setAttendance,
+  setMonitorActiveRecord,
   setMonitorForActivity,
   updateChildRecord,
   type ChildRecord,
@@ -122,13 +124,17 @@ export async function setChildActive(childId: string, active: boolean): Promise<
   return updated;
 }
 
-export async function sendNotification(activityId: string, message: string, createdBy: string) {
+export async function sendNotification(activityId: string, message: string, createdByUserId: string, createdByName: string) {
   const activities = await getActivitiesList();
   if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
   if (!message.trim()) throw new PresenceCommandError("Le message ne peut pas être vide.");
-  return addNotification(activityId, message.trim(), createdBy);
+  return addNotificationRecord(activityId, message.trim(), createdByUserId, createdByName);
 }
 
-export function markNotificationsRead(activityId: string) {
-  markActivityNotificationsRead(activityId);
+export async function markNotificationsRead(activityId: string) {
+  await markActivityNotificationsReadData(activityId);
+}
+
+export async function setMonitorActive(monitorId: string, active: boolean, actingAdminId: string) {
+  await setMonitorActiveRecord(monitorId, active, actingAdminId);
 }

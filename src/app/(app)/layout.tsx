@@ -33,7 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     user.role === "ADMIN"
       ? await getAllNotificationsForAdmin()
       : monitorActivityId
-        ? getNotificationsForMonitor(monitorActivityId)
+        ? await getNotificationsForMonitor(monitorActivityId)
         : [];
   const initialNotifications = rawNotifications.map((n) => ({
     id: n.id,

@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { listChildrenForAdmin } from "@/features/presence/application/queries";
-import { ChildActiveToggle } from "@/features/presence/ui/child-active-toggle";
+import { ChildrenSearchList } from "@/features/presence/ui/children-search-list";
 import { requireUser } from "@/lib/auth/require-user";
 
 export default async function AdminChildrenPage() {
@@ -21,30 +20,7 @@ export default async function AdminChildrenPage() {
         </Link>
       </div>
 
-      <Card>
-        <CardContent className="divide-y divide-[var(--border)] p-0">
-          {children.map((child) => (
-            <div key={child.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-              <div>
-                <p className={`font-semibold ${child.active ? "text-[var(--foreground)]" : "text-[var(--muted)] line-through"}`}>
-                  {child.firstName} {child.lastName}
-                </p>
-                <p className="text-xs text-[var(--muted)]">
-                  {child.activityName}
-                  {child.daycareAuto ? " · Garderie automatique" : ""}
-                  {!child.active ? " · Désactivé" : ""}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link href={`/admin/children/${child.id}`} className="text-sm font-semibold text-[var(--primary)] hover:underline">
-                  Modifier
-                </Link>
-                <ChildActiveToggle childId={child.id} active={child.active} />
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <ChildrenSearchList childrenList={children} />
     </div>
   );
 }
