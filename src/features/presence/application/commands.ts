@@ -1,48 +1,57 @@
-import { closeActivityDay as closeActivityDayInStore, getActivityDayState } from "@/server/demo/activity-day-store";
 import { addNotification, markActivityNotificationsRead } from "@/server/demo/notifications-store";
-import { getPresenceRecords } from "@/server/demo/store";
 import {
+  closeDay,
   createChildRecord,
   getActivitiesList,
+  getAttendanceMap,
   getChildById,
+  getDayState,
   getMonitorsList,
+  setAttendance,
   setMonitorForActivity,
   updateChildRecord,
   type ChildRecord,
   type NewChildRecordInput,
 } from "@/server/data-source";
+import type { PresenceRecord } from "@/features/presence/domain/types";
 import { PresenceCommandError } from "./errors";
 
-async function requireRecord(childId: string, activityId: string) {
+function emptyRecord(childId: string, activityId: string): PresenceRecord {
+  return { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null };
+}
+
+/** A child with no attendance row yet is not an error — it's the normal
+ * "not marked today" starting state (real rows only exist once someone
+ * actually records something). */
+async function requireRecord(childId: string, activityId: string, now: Date): Promise<PresenceRecord> {
   const child = await getChildById(childId);
   if (!child || child.activityId !== activityId) {
     throw new PresenceCommandError("Enfant introuvable pour cette activité.");
   }
-  const record = (await getPresenceRecords()).get(childId);
-  if (!record) throw new PresenceCommandError("Enfant introuvable pour cette activité.");
-  return record;
+  const records = await getAttendanceMap(now, activityId);
+  return records.get(childId) ?? emptyRecord(childId, activityId);
 }
 
-export async function markArrived(activityId: string, childId: string, now = new Date()) {
-  const record = await requireRecord(childId, activityId);
-  (await getPresenceRecords()).set(childId, { ...record, arrived: true, arrivedAt: now });
+export async function markArrived(activityId: string, childId: string, recordedBy: string, now = new Date()) {
+  await requireRecord(childId, activityId, now);
+  await setAttendance(childId, activityId, now, { arrived: true, arrivedAt: now }, recordedBy);
 }
 
 /** Marking a child absent also clears any departure: an absent child cannot have "left". */
-export async function markAbsent(activityId: string, childId: string) {
-  const record = await requireRecord(childId, activityId);
-  (await getPresenceRecords()).set(childId, { ...record, arrived: false, arrivedAt: null, left: false, leftAt: null });
+export async function markAbsent(activityId: string, childId: string, recordedBy: string, now = new Date()) {
+  await requireRecord(childId, activityId, now);
+  await setAttendance(childId, activityId, now, { arrived: false, arrivedAt: null, departed: false, departedAt: null }, recordedBy);
 }
 
-export async function markLeft(activityId: string, childId: string, now = new Date()) {
-  const record = await requireRecord(childId, activityId);
+export async function markLeft(activityId: string, childId: string, recordedBy: string, now = new Date()) {
+  const record = await requireRecord(childId, activityId, now);
   if (!record.arrived) throw new PresenceCommandError("Un enfant absent ne peut pas être marqué parti.");
-  (await getPresenceRecords()).set(childId, { ...record, left: true, leftAt: now });
+  await setAttendance(childId, activityId, now, { departed: true, departedAt: now }, recordedBy);
 }
 
-export async function markStillPresent(activityId: string, childId: string) {
-  const record = await requireRecord(childId, activityId);
-  (await getPresenceRecords()).set(childId, { ...record, left: false, leftAt: null });
+export async function markStillPresent(activityId: string, childId: string, recordedBy: string, now = new Date()) {
+  await requireRecord(childId, activityId, now);
+  await setAttendance(childId, activityId, now, { departed: false, departedAt: null }, recordedBy);
 }
 
 export async function assignMonitor(activityId: string, monitorId: string) {
@@ -52,11 +61,18 @@ export async function assignMonitor(activityId: string, monitorId: string) {
   await setMonitorForActivity(activityId, monitorId);
 }
 
-export async function closeActivityDay(activityId: string, closedBy: string) {
+/**
+ * Guarded twice against double-closure: once here (a friendly error message
+ * before ever touching the write path) and once more at the repository
+ * layer (server/supabase/activity-day-state-repo.ts), which is the one that
+ * actually matters — a reload racing a second tap can't slip past both.
+ */
+export async function closeActivityDay(activityId: string, closedByUserId: string, closedByName: string, now = new Date()) {
   const activities = await getActivitiesList();
   if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
-  if (getActivityDayState(activityId).closed) throw new PresenceCommandError("Cette activité est déjà clôturée.");
-  closeActivityDayInStore(activityId, closedBy);
+  const dayState = await getDayState(activityId, now);
+  if (dayState.closed) throw new PresenceCommandError("Cette séance est déjà clôturée.");
+  await closeDay(activityId, now, closedByUserId, closedByName);
 }
 
 async function validateChildInput(input: Pick<NewChildRecordInput, "firstName" | "lastName" | "activityId">) {
@@ -72,14 +88,7 @@ async function validateChildInput(input: Pick<NewChildRecordInput, "firstName" |
 export async function createChild(input: NewChildRecordInput): Promise<ChildRecord> {
   await validateChildInput(input);
   const child = await createChildRecord(input);
-  (await getPresenceRecords()).set(child.id, {
-    childId: child.id,
-    activityId: child.activityId,
-    arrived: false,
-    arrivedAt: null,
-    left: false,
-    leftAt: null,
-  });
+  await setAttendance(child.id, child.activityId, new Date(), { arrived: false, arrivedAt: null, departed: false, departedAt: null }, null);
   return child;
 }
 
@@ -102,14 +111,7 @@ export async function updateChild(childId: string, input: UpdateChildInput): Pro
   // Moving a child to another activity resets today's presence: their old
   // record belongs to an activity they are no longer part of.
   if (existing.activityId !== input.activityId) {
-    (await getPresenceRecords()).set(childId, {
-      childId,
-      activityId: input.activityId,
-      arrived: false,
-      arrivedAt: null,
-      left: false,
-      leftAt: null,
-    });
+    await setAttendance(childId, input.activityId, new Date(), { arrived: false, arrivedAt: null, departed: false, departedAt: null }, null);
   }
   return updated;
 }

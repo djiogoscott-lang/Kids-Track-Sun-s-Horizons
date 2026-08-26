@@ -1,10 +1,12 @@
-import { getActivityDayState } from "@/server/demo/activity-day-store";
 import { getAllNotifications, getNotificationsForActivity, getUnreadCountForActivity, type Notification } from "@/server/demo/notifications-store";
-import { getPresenceRecords } from "@/server/demo/store";
-import { getActivitiesList, getChildById, getChildrenList, getMonitorsList } from "@/server/data-source";
+import { getActivitiesList, getAttendanceMap, getChildById, getChildrenList, getDayState, getDayStatesForDate, getMonitorsList } from "@/server/data-source";
 import { daycareReason, eveningStatus, type DaycareReason } from "@/features/presence/domain/daycare";
-import { morningStatus } from "@/features/presence/domain/types";
+import { morningStatus, type PresenceRecord } from "@/features/presence/domain/types";
 import type { EveningStatus, MorningStatus } from "@/features/presence/domain/types";
+
+function emptyRecord(childId: string, activityId: string): PresenceRecord {
+  return { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null };
+}
 
 /**
  * The monitor's name is a label, not something a whole page should die over.
@@ -36,13 +38,14 @@ export interface ActivityOverview {
   closed: boolean;
 }
 
-export async function listActivitiesOverview(): Promise<ActivityOverview[]> {
-  const [activities, allChildren, records] = await Promise.all([getActivitiesList(), getChildrenList(), getPresenceRecords()]);
+export async function listActivitiesOverview(now = new Date()): Promise<ActivityOverview[]> {
+  const [activities, allChildren, records] = await Promise.all([getActivitiesList(), getChildrenList(), getAttendanceMap(now)]);
 
   return Promise.all(
     activities.map(async (activity) => {
       const children = allChildren.filter((c) => c.activityId === activity.id && c.active);
       const arrivedCount = children.filter((c) => records.get(c.id)?.arrived).length;
+      const dayState = await getDayState(activity.id, now);
       return {
         id: activity.id,
         name: activity.name,
@@ -50,7 +53,7 @@ export async function listActivitiesOverview(): Promise<ActivityOverview[]> {
         total: children.length,
         arrivedCount,
         absentCount: children.length - arrivedCount,
-        closed: getActivityDayState(activity.id).closed,
+        closed: dayState.closed,
       };
     }),
   );
@@ -76,6 +79,13 @@ export interface EveningCounters {
   stillPresentCount: number;
 }
 
+export interface ChildGarderieRow {
+  childId: string;
+  firstName: string;
+  lastName: string;
+  reason: DaycareReason;
+}
+
 export interface ActivityDetail {
   id: string;
   name: string;
@@ -84,21 +94,37 @@ export interface ActivityDetail {
   closedAt: Date | null;
   morningCounters: { total: number; arrivedCount: number; absentCount: number };
   eveningCounters: EveningCounters;
+  garderieCount: number;
   morningList: ChildMorningRow[];
   eveningList: ChildEveningRow[];
+  /**
+   * Every child currently in daycare for this activity, PLANNED (daycareAuto)
+   * or AFTER_SESSION alike. Deliberately separate from eveningList, which
+   * excludes daycareAuto children on purpose (they never appear in this
+   * activity's own departure workflow) — a view that needs the full daycare
+   * picture (like history) must not reuse eveningList for that.
+   */
+  garderieList: ChildGarderieRow[];
 }
 
+/**
+ * `now` doubles as both "which date's attendance to load" and "current time
+ * for the daycare-cutoff comparison". That's only ambiguous for a past date
+ * that was never closed (a monitor who forgot) — everywhere else, a closed
+ * day already short-circuits the cutoff check, so passing the real current
+ * time alongside a past date's stored rows is safe.
+ */
 export async function getActivityDetail(activityId: string, now = new Date()): Promise<ActivityDetail | null> {
   const activities = await getActivitiesList();
   const activity = activities.find((a) => a.id === activityId);
   if (!activity) return null;
 
-  const dayState = getActivityDayState(activityId);
-  const [records, allChildren] = await Promise.all([getPresenceRecords(), getChildrenList()]);
+  const dayState = await getDayState(activityId, now);
+  const [records, allChildren] = await Promise.all([getAttendanceMap(now, activityId), getChildrenList()]);
   const children = sortByName(allChildren.filter((c) => c.activityId === activityId && c.active));
 
   const morningList: ChildMorningRow[] = children.map((child) => {
-    const record = records.get(child.id)!;
+    const record = records.get(child.id) ?? emptyRecord(child.id, activityId);
     return { childId: child.id, firstName: child.firstName, lastName: child.lastName, status: morningStatus(record) };
   });
 
@@ -106,11 +132,17 @@ export async function getActivityDetail(activityId: string, now = new Date()): P
   // departure list entirely: nobody picks them up here, they go to Garderie.
   const eveningChildren = children.filter((c) => !c.daycareAuto && records.get(c.id)?.arrived);
   const eveningList: ChildEveningRow[] = eveningChildren.map((child) => {
-    const record = records.get(child.id)!;
+    const record = records.get(child.id) ?? emptyRecord(child.id, activityId);
     return { childId: child.id, firstName: child.firstName, lastName: child.lastName, status: eveningStatus(record, dayState.closed, now) };
   });
 
   const arrivedCount = morningList.filter((c) => c.status === "ARRIVED").length;
+
+  const garderieList: ChildGarderieRow[] = children.flatMap((child) => {
+    const record = records.get(child.id) ?? emptyRecord(child.id, activityId);
+    const reason = daycareReason(record, child.daycareAuto, dayState.closed, now);
+    return reason ? [{ childId: child.id, firstName: child.firstName, lastName: child.lastName, reason }] : [];
+  });
 
   return {
     id: activity.id,
@@ -124,8 +156,10 @@ export async function getActivityDetail(activityId: string, now = new Date()): P
       leftCount: eveningList.filter((c) => c.status === "LEFT").length,
       stillPresentCount: eveningList.filter((c) => c.status !== "LEFT").length,
     },
+    garderieCount: garderieList.length,
     morningList,
     eveningList,
+    garderieList,
   };
 }
 
@@ -160,7 +194,12 @@ export interface DaycareRow {
 
 /** The Garderie list is global, not per-activity: children converge here from every activity. */
 export async function getDaycareList(now = new Date()): Promise<DaycareRow[]> {
-  const [records, allChildren, activities] = await Promise.all([getPresenceRecords(), getChildrenList(), getActivitiesList()]);
+  const [records, allChildren, activities, dayStates] = await Promise.all([
+    getAttendanceMap(now),
+    getChildrenList(),
+    getActivitiesList(),
+    getDayStatesForDate(now),
+  ]);
   const rows: DaycareRow[] = [];
 
   for (const child of allChildren) {
@@ -170,7 +209,8 @@ export async function getDaycareList(now = new Date()): Promise<DaycareRow[]> {
     const activity = activities.find((a) => a.id === child.activityId);
     if (!activity) continue;
 
-    const reason = daycareReason(record, child.daycareAuto, getActivityDayState(child.activityId).closed, now);
+    const closed = dayStates.get(child.activityId)?.closed ?? false;
+    const reason = daycareReason(record, child.daycareAuto, closed, now);
     if (reason) {
       rows.push({
         childId: child.id,
@@ -184,32 +224,6 @@ export async function getDaycareList(now = new Date()): Promise<DaycareRow[]> {
   }
 
   return sortByName(rows);
-}
-
-export interface DashboardSummary {
-  childrenToday: number;
-  presentCount: number;
-  absentCount: number;
-  daycareCount: number;
-  activities: ActivityOverview[];
-}
-
-export async function getDashboardSummary(now = new Date()): Promise<DashboardSummary> {
-  const [activities, records, allChildren, daycare] = await Promise.all([
-    listActivitiesOverview(),
-    getPresenceRecords(),
-    getChildrenList(),
-    getDaycareList(now),
-  ]);
-  const children = allChildren.filter((c) => c.active);
-
-  return {
-    childrenToday: children.length,
-    presentCount: children.filter((c) => records.get(c.id)?.arrived && !records.get(c.id)?.left).length,
-    absentCount: children.filter((c) => !records.get(c.id)?.arrived).length,
-    daycareCount: daycare.length,
-    activities,
-  };
 }
 
 export function getNotificationsForMonitor(activityId: string): Notification[] {

@@ -69,10 +69,22 @@ export default async function ActivityDetailPage({
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Moniteur : {activity.monitorName}</p>
             <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">{activity.name}</h1>
-            {activity.closed ? <p className="mt-0.5 text-sm font-semibold text-[var(--muted)]">✓ Séance clôturée</p> : null}
+            {activity.closed ? <p className="mt-0.5 text-sm font-semibold text-[var(--muted)]">✓ Cette séance est déjà clôturée.</p> : null}
           </div>
         </div>
-        {!activity.closed ? <ClosureControl activityId={id} /> : null}
+        {!activity.closed ? (
+          <ClosureControl
+            activityId={id}
+            activityName={activity.name}
+            now={now}
+            counts={{
+              arrivedCount: activity.morningCounters.arrivedCount,
+              absentCount: activity.morningCounters.absentCount,
+              leftCount: activity.eveningCounters.leftCount,
+              garderieCount: activity.garderieCount,
+            }}
+          />
+        ) : null}
       </div>
 
       <ActivityTabs

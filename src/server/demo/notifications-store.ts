@@ -71,3 +71,25 @@ export function markActivityNotificationsRead(activityId: string, now = new Date
   }
   if (changed) bus().emit(activityId, { type: "read", activityId } satisfies NotificationEvent);
 }
+
+/**
+ * Same bus, same one-channel-per-listener pattern as the notifications
+ * above — just a second reserved channel name, so admin can see attendance
+ * and closure changes land live without opening one connection per
+ * activity. Not a second real-time system: it's the exact same
+ * EventEmitter + SSE mechanism already proven for notifications.
+ */
+const ADMIN_CHANNEL = "__admin_live__";
+
+export interface AdminLiveEvent {
+  activityId: string;
+}
+
+export function subscribeToAdminUpdates(listener: (event: AdminLiveEvent) => void): () => void {
+  bus().on(ADMIN_CHANNEL, listener);
+  return () => bus().off(ADMIN_CHANNEL, listener);
+}
+
+export function publishActivityUpdate(activityId: string): void {
+  bus().emit(ADMIN_CHANNEL, { activityId } satisfies AdminLiveEvent);
+}

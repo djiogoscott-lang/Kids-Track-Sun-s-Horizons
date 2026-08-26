@@ -1,4 +1,4 @@
-import { Bell, ClipboardCheck, DoorOpen, Home, Shuffle, Trophy, Users2 } from "lucide-react";
+import { Bell, ClipboardCheck, DoorOpen, History, Home, Shuffle, Trophy, Users2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
@@ -9,6 +9,7 @@ import { OnboardingProvider } from "@/features/onboarding/onboarding-provider";
 import { ADMIN_STEPS, MONITOR_STEPS } from "@/features/onboarding/steps";
 import { NotificationsProvider } from "@/features/notifications/notifications-provider";
 import { getActivityIdForMonitor, getAllNotificationsForAdmin, getNotificationsForMonitor } from "@/features/presence/application/queries";
+import { AdminLiveSync } from "@/features/presence/ui/admin-live-sync";
 import { signOutAction } from "@/lib/auth/actions";
 import { getCurrentUser } from "@/lib/auth/session";
 
@@ -20,6 +21,7 @@ const ADMIN_LINKS = [
   { href: "/admin/departures", label: "Départs", icon: DoorOpen },
   { href: "/garderie", label: "Garderie", icon: Home, tourId: "nav-garderie" },
   { href: "/admin/notifications", label: "Notifications", icon: Bell },
+  { href: "/admin/history", label: "Historique", icon: History },
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -99,6 +101,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         ) : null}
       </header>
       <main className={`mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 ${user.role === "MONITOR" ? "pb-24" : ""}`}>{children}</main>
+      {user.role === "ADMIN" ? <AdminLiveSync /> : null}
       {user.role === "MONITOR" && monitorActivityId ? (
         <Suspense fallback={null}>
           <MonitorTabBar activityId={monitorActivityId} />

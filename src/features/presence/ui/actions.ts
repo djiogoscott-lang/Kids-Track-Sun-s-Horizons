@@ -18,6 +18,7 @@ import {
 import { getActivityIdForMonitor } from "@/features/presence/application/queries";
 import { PresenceCommandError } from "@/features/presence/application/errors";
 import { requireUser } from "@/lib/auth/require-user";
+import { publishActivityUpdate } from "@/server/demo/notifications-store";
 import type { NewChildRecordInput } from "@/server/data-source";
 
 export type ActionResult = { ok: true } | { ok: false; message: string };
@@ -37,6 +38,10 @@ async function toResult(fn: () => Promise<unknown>): Promise<ActionResult> {
     return { ok: true };
   } catch (error) {
     if (error instanceof PresenceCommandError) return { ok: false, message: error.message };
+    // An unexpected (non-business) error still gets a friendly message for
+    // the user, but must not vanish silently server-side — that's exactly
+    // what made an earlier bug here take real debugging effort to find.
+    console.error("Unexpected error in a presence action:", error);
     return { ok: false, message: "Une erreur est survenue. Veuillez réessayer." };
   }
 }
@@ -47,32 +52,35 @@ function revalidateActivityViews(activityId: string) {
   revalidatePath("/garderie");
   revalidatePath("/admin/presences");
   revalidatePath("/admin/departures");
+  // Pushes a live nudge to any open admin screen so a monitor's change shows
+  // up without a manual reload — same SSE bus already used for notifications.
+  publishActivityUpdate(activityId);
 }
 
 export async function markArrivedAction(activityId: string, childId: string): Promise<ActionResult> {
-  await assertActivityAccess(activityId);
-  const result = await toResult(() => markArrived(activityId, childId));
+  const user = await assertActivityAccess(activityId);
+  const result = await toResult(() => markArrived(activityId, childId, user.id));
   revalidateActivityViews(activityId);
   return result;
 }
 
 export async function markAbsentAction(activityId: string, childId: string): Promise<ActionResult> {
-  await assertActivityAccess(activityId);
-  const result = await toResult(() => markAbsent(activityId, childId));
+  const user = await assertActivityAccess(activityId);
+  const result = await toResult(() => markAbsent(activityId, childId, user.id));
   revalidateActivityViews(activityId);
   return result;
 }
 
 export async function markLeftAction(activityId: string, childId: string): Promise<ActionResult> {
-  await assertActivityAccess(activityId);
-  const result = await toResult(() => markLeft(activityId, childId));
+  const user = await assertActivityAccess(activityId);
+  const result = await toResult(() => markLeft(activityId, childId, user.id));
   revalidateActivityViews(activityId);
   return result;
 }
 
 export async function markStillPresentAction(activityId: string, childId: string): Promise<ActionResult> {
-  await assertActivityAccess(activityId);
-  const result = await toResult(() => markStillPresent(activityId, childId));
+  const user = await assertActivityAccess(activityId);
+  const result = await toResult(() => markStillPresent(activityId, childId, user.id));
   revalidateActivityViews(activityId);
   return result;
 }
@@ -83,15 +91,15 @@ export async function markStillPresentAction(activityId: string, childId: string
  * the child's activity.
  */
 export async function markGoneFromDaycareAction(activityId: string, childId: string): Promise<ActionResult> {
-  await requireUser();
-  const result = await toResult(() => markLeft(activityId, childId));
+  const user = await requireUser();
+  const result = await toResult(() => markLeft(activityId, childId, user.id));
   revalidateActivityViews(activityId);
   return result;
 }
 
 export async function closeActivityDayAction(activityId: string): Promise<ActionResult> {
   const user = await assertActivityAccess(activityId);
-  const result = await toResult(() => closeActivityDay(activityId, user.name));
+  const result = await toResult(() => closeActivityDay(activityId, user.id, user.name));
   revalidateActivityViews(activityId);
   return result;
 }

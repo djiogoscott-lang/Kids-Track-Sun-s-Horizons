@@ -1,13 +1,23 @@
 import { notFound } from "next/navigation";
+import { Card, CardContent } from "@/components/ui/card";
 import { getChildForAdmin } from "@/features/presence/application/queries";
+import { getChildHistory } from "@/features/presence/application/history-queries";
 import { ChildForm } from "@/features/presence/ui/child-form";
 import { requireUser } from "@/lib/auth/require-user";
+import { formatDateLong, formatTime } from "@/lib/format";
 import { getActivitiesList } from "@/server/data-source";
+
+const STATUS_LABEL: Record<string, string> = {
+  ABSENT: "🔴 Absent",
+  LEFT: "🔵 Parti",
+  STILL_PRESENT: "⚪ Encore présent",
+  DAYCARE: "🟠 Garderie",
+};
 
 export default async function EditChildPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser("ADMIN");
   const { id } = await params;
-  const [child, activities] = await Promise.all([getChildForAdmin(id), getActivitiesList()]);
+  const [child, activities, history] = await Promise.all([getChildForAdmin(id), getActivitiesList(), getChildHistory(id)]);
   if (!child) notFound();
 
   return (
@@ -28,6 +38,32 @@ export default async function EditChildPage({ params }: { params: Promise<{ id: 
           notes: child.notes,
         }}
       />
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-bold text-[var(--foreground)]">Historique des présences</h2>
+        {history.length === 0 ? (
+          <p className="text-sm text-[var(--muted)]">Aucune présence enregistrée pour l&apos;instant.</p>
+        ) : (
+          <Card>
+            <CardContent className="divide-y divide-[var(--border)] p-0">
+              {history.map((row) => (
+                <div key={row.date} className="flex items-center justify-between px-5 py-3">
+                  <div>
+                    <p className="font-semibold text-[var(--foreground)]">{formatDateLong(new Date(`${row.date}T12:00:00`))}</p>
+                    <p className="text-xs text-[var(--muted)]">{row.activityName}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-[var(--foreground)]">
+                      {row.arrivedAt ? formatTime(row.arrivedAt) : "—"} → {row.departedAt ? formatTime(row.departedAt) : "—"}
+                    </p>
+                    <p className="text-xs font-semibold text-[var(--muted)]">{STATUS_LABEL[row.status]}</p>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+      </section>
     </div>
   );
 }
