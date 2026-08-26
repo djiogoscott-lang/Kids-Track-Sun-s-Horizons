@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { listChildrenForAdmin } from "@/features/presence/application/queries";
 import { ChildrenSearchList } from "@/features/presence/ui/children-search-list";
+import { ExcelImportDialog } from "@/features/presence/ui/excel-import-dialog";
 import { requireUser } from "@/lib/auth/require-user";
 
 export default async function AdminChildrenPage() {
@@ -15,9 +16,24 @@ export default async function AdminChildrenPage() {
           <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Enfants</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">{children.length} enfant{children.length > 1 ? "s" : ""} enregistré{children.length > 1 ? "s" : ""}.</p>
         </div>
-        <Link href="/admin/children/new">
-          <Button type="button">+ Ajouter un enfant</Button>
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/api/admin/children/template"
+            className="tap-scale flex h-11 items-center rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--primary)]"
+          >
+            📄 Modèle Excel
+          </a>
+          <a
+            href="/api/admin/children/export"
+            className="tap-scale flex h-11 items-center rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--primary)]"
+          >
+            📤 Exporter Excel
+          </a>
+          <ExcelImportDialog />
+          <Link href="/admin/children/new">
+            <Button type="button">+ Ajouter un enfant</Button>
+          </Link>
+        </div>
       </div>
 
       <ChildrenSearchList childrenList={children} />

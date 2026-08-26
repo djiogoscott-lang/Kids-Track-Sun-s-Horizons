@@ -7,11 +7,14 @@ import {
   getChildById,
   getDayState,
   getMonitorsList,
+  inviteMonitorRecord,
+  isMonitorEmailTaken,
   markActivityNotificationsReadData,
   setAttendance,
   setMonitorActiveRecord,
   setMonitorForActivity,
   updateChildRecord,
+  updateMonitorNameRecord,
   type ChildRecord,
   type NewChildRecordInput,
 } from "@/server/data-source";
@@ -137,4 +140,24 @@ export async function markNotificationsRead(activityId: string) {
 
 export async function setMonitorActive(monitorId: string, active: boolean, actingAdminId: string) {
   await setMonitorActiveRecord(monitorId, active, actingAdminId);
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export async function inviteMonitor(email: string, firstName: string, lastName: string, activityId: string | null) {
+  const trimmedEmail = email.trim();
+  if (!EMAIL_PATTERN.test(trimmedEmail)) throw new PresenceCommandError("Adresse email invalide.");
+  if (!firstName.trim() || !lastName.trim()) throw new PresenceCommandError("Le prénom et le nom sont obligatoires.");
+  if (await isMonitorEmailTaken(trimmedEmail)) throw new PresenceCommandError("Cette adresse email est déjà utilisée.");
+  if (activityId) {
+    const activities = await getActivitiesList();
+    if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
+  }
+  const fullName = `${firstName.trim()} ${lastName.trim()}`;
+  return inviteMonitorRecord(trimmedEmail, fullName, activityId);
+}
+
+export async function updateMonitorName(monitorId: string, fullName: string) {
+  if (!fullName.trim()) throw new PresenceCommandError("Le nom est obligatoire.");
+  await updateMonitorNameRecord(monitorId, fullName.trim());
 }

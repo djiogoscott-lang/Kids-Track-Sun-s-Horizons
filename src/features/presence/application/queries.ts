@@ -272,6 +272,8 @@ export interface ChildAdminRow {
   daycareAuto: boolean;
   active: boolean;
   notes: string;
+  isDemo: boolean;
+  createdAt: Date;
 }
 
 export async function listChildrenForAdmin(): Promise<ChildAdminRow[]> {

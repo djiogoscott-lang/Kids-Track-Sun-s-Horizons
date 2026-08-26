@@ -55,6 +55,8 @@ export interface ChildRecord {
   daycareAuto: boolean;
   active: boolean;
   notes: string;
+  isDemo: boolean;
+  createdAt: Date;
 }
 
 export async function getActivitiesList(): Promise<ActivityRecord[]> {
@@ -112,14 +114,21 @@ async function resolveRealUserId(userId: string): Promise<string | null> {
   return realActivities.find((a) => a.name === demoActivityName)?.monitorId ?? null;
 }
 
+// Demo mode has no created_at/is_demo concept — synthesized here so the rest
+// of the app can treat ChildRecord uniformly regardless of backend.
+function demoChildToRecord(child: { id: string; firstName: string; lastName: string; activityId: string; daycareAuto: boolean; active: boolean; notes: string }): ChildRecord {
+  return { ...child, isDemo: false, createdAt: new Date(0) };
+}
+
 export async function getChildrenList(): Promise<ChildRecord[]> {
   if (isSupabaseConfigured) return supaChildren.getChildren();
-  return demoChildren.getChildren();
+  return demoChildren.getChildren().map(demoChildToRecord);
 }
 
 export async function getChildById(childId: string): Promise<ChildRecord | undefined> {
   if (isSupabaseConfigured) return supaChildren.getChild(childId);
-  return demoChildren.getChild(childId);
+  const child = demoChildren.getChild(childId);
+  return child ? demoChildToRecord(child) : undefined;
 }
 
 export interface NewChildRecordInput {
@@ -128,18 +137,29 @@ export interface NewChildRecordInput {
   activityId: string;
   daycareAuto: boolean;
   notes: string;
+  isDemo?: boolean;
 }
 
 export async function createChildRecord(input: NewChildRecordInput): Promise<ChildRecord> {
   if (isSupabaseConfigured) return supaChildren.createChild(input);
-  return demoChildren.createChild(input);
+  return demoChildToRecord(demoChildren.createChild(input));
+}
+
+/** Supabase-only: bulk import has no demo-mode equivalent (demo mode has no
+ * persistence story to bulk-load into in the first place). */
+export async function bulkCreateChildRecords(inputs: NewChildRecordInput[]): Promise<ChildRecord[]> {
+  if (!isSupabaseConfigured) {
+    throw new PresenceCommandError("L'import Excel nécessite Supabase.");
+  }
+  return supaChildren.bulkCreateChildren(inputs);
 }
 
 export type ChildRecordUpdate = Partial<Pick<ChildRecord, "firstName" | "lastName" | "activityId" | "daycareAuto" | "notes" | "active">>;
 
 export async function updateChildRecord(childId: string, update: ChildRecordUpdate): Promise<ChildRecord | null> {
   if (isSupabaseConfigured) return supaChildren.updateChild(childId, update);
-  return demoChildren.updateChild(childId, update);
+  const updated = demoChildren.updateChild(childId, update);
+  return updated ? demoChildToRecord(updated) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -342,4 +362,23 @@ export async function setMonitorActiveRecord(monitorId: string, active: boolean,
     throw new PresenceCommandError("Impossible de déterminer l'administrateur à l'origine de cette action.");
   }
   return supaMonitors.setMonitorActive(monitorId, active, realActingAdminId);
+}
+
+export async function isMonitorEmailTaken(email: string): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+  return supaMonitors.isEmailAlreadyUsed(email);
+}
+
+export async function inviteMonitorRecord(email: string, fullName: string, activityId: string | null): Promise<string> {
+  if (!isSupabaseConfigured) {
+    throw new PresenceCommandError("L'ajout d'un moniteur nécessite Supabase.");
+  }
+  return supaMonitors.inviteMonitor(email, fullName, activityId);
+}
+
+export async function updateMonitorNameRecord(monitorId: string, fullName: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new PresenceCommandError("La modification d'un moniteur nécessite Supabase.");
+  }
+  return supaMonitors.updateMonitorName(monitorId, fullName);
 }

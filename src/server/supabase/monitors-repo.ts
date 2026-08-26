@@ -68,3 +68,49 @@ export async function setMonitorActive(monitorId: string, active: boolean, actin
     .eq("role", "MONITOR");
   if (error) throw error;
 }
+
+export async function isEmailAlreadyUsed(email: string): Promise<boolean> {
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase.auth.admin.listUsers();
+  if (error) throw error;
+  const target = email.trim().toLowerCase();
+  return data.users.some((u) => u.email?.toLowerCase() === target);
+}
+
+/**
+ * Never handles a password: Supabase's own invitation flow emails the new
+ * monitor a link to set their own password on first login. The full_name
+ * passed here reaches public.profiles automatically via the on_auth_user_created
+ * trigger (see the foundation migration) — inserting it a second time here
+ * would just race that trigger.
+ */
+export async function inviteMonitor(email: string, fullName: string, activityId: string | null): Promise<string> {
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
+    data: { full_name: fullName },
+  });
+  if (error) throw error;
+  const userId = data.user.id;
+
+  const { error: membershipError } = await supabase
+    .from("organization_memberships")
+    .insert({ organization_id: ORGANIZATION_ID, user_id: userId, role: "MONITOR" });
+  if (membershipError) throw membershipError;
+
+  if (activityId) {
+    const { error: activityError } = await supabase
+      .from("activities")
+      .update({ monitor_id: userId })
+      .eq("id", activityId)
+      .eq("organization_id", ORGANIZATION_ID);
+    if (activityError) throw activityError;
+  }
+
+  return userId;
+}
+
+export async function updateMonitorName(monitorId: string, fullName: string): Promise<void> {
+  const supabase = getServiceRoleClient();
+  const { error } = await supabase.from("profiles").update({ full_name: fullName }).eq("id", monitorId);
+  if (error) throw error;
+}

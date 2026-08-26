@@ -5,6 +5,7 @@ import {
   assignMonitor,
   closeActivityDay,
   createChild,
+  inviteMonitor,
   markAbsent,
   markArrived,
   markLeft,
@@ -14,6 +15,7 @@ import {
   setChildActive,
   setMonitorActive,
   updateChild,
+  updateMonitorName,
   type UpdateChildInput,
 } from "@/features/presence/application/commands";
 import { getActivityIdForMonitor } from "@/features/presence/application/queries";
@@ -142,6 +144,26 @@ export async function assignMonitorAction(activityId: string, monitorId: string)
 export async function setMonitorActiveAction(monitorId: string, active: boolean): Promise<ActionResult> {
   const admin = await requireUser("ADMIN");
   const result = await toResult(() => setMonitorActive(monitorId, active, admin.id));
+  revalidatePath("/admin/monitors");
+  return result;
+}
+
+export async function inviteMonitorAction(
+  email: string,
+  firstName: string,
+  lastName: string,
+  activityId: string | null,
+): Promise<ActionResult> {
+  await requireUser("ADMIN");
+  const result = await toResult(() => inviteMonitor(email, firstName, lastName, activityId));
+  revalidatePath("/admin/monitors");
+  revalidatePath("/activities");
+  return result;
+}
+
+export async function updateMonitorNameAction(monitorId: string, fullName: string): Promise<ActionResult> {
+  await requireUser("ADMIN");
+  const result = await toResult(() => updateMonitorName(monitorId, fullName));
   revalidatePath("/admin/monitors");
   return result;
 }
