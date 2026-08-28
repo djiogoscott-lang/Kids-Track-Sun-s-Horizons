@@ -162,6 +162,22 @@ export async function updateChildRecord(childId: string, update: ChildRecordUpda
   return updated ? demoChildToRecord(updated) : null;
 }
 
+/** Supabase-only: physical deletion has no demo-mode equivalent, and demo
+ * data was never meant to model deletion protections in the first place. */
+export async function deleteChildRecordPermanently(childId: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new PresenceCommandError("La suppression définitive nécessite Supabase.");
+  }
+  try {
+    await supaChildren.deleteChildPermanently(childId);
+  } catch (error) {
+    if (error instanceof supaChildren.ChildHasHistoryError) {
+      throw new PresenceCommandError(error.message);
+    }
+    throw error;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Attendance — the date dimension the demo store never had. Reads are always
 // scoped to an explicit date (defaulting to "today"), so the exact same

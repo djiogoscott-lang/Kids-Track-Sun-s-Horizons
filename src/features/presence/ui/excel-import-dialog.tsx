@@ -13,9 +13,15 @@ interface RowOutcome {
 interface PreviewResponse {
   summary: { total: number; valid: number; duplicates: number; errors: number };
   results: RowOutcome[];
+  sheetName: string;
 }
 
-type Step = "pick" | "preview" | "done";
+interface MultiSheetResponse {
+  multipleSheets: true;
+  sheetNames: string[];
+}
+
+type Step = "pick" | "choose-sheet" | "preview" | "done";
 
 export function ExcelImportDialog() {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -25,6 +31,7 @@ export function ExcelImportDialog() {
   const [step, setStep] = useState<Step>("pick");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [includeDuplicates, setIncludeDuplicates] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -32,6 +39,7 @@ export function ExcelImportDialog() {
   function reset() {
     setStep("pick");
     setError(null);
+    setSheetNames([]);
     setPreview(null);
     setIncludeDuplicates(false);
     setResult(null);
@@ -47,7 +55,7 @@ export function ExcelImportDialog() {
     dialogRef.current?.close();
   }
 
-  function analyze() {
+  function analyze(sheetName?: string) {
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
       setError("Choisissez un fichier .xlsx.");
@@ -57,10 +65,16 @@ export function ExcelImportDialog() {
     startTransition(async () => {
       const formData = new FormData();
       formData.append("file", file);
+      if (sheetName) formData.append("sheetName", sheetName);
       const res = await fetch("/api/admin/children/import/preview", { method: "POST", body: formData });
-      const json = (await res.json()) as PreviewResponse & { error?: string };
+      const json = (await res.json()) as (PreviewResponse | MultiSheetResponse) & { error?: string };
       if (!res.ok) {
         setError(json.error ?? "Erreur lors de l'analyse du fichier.");
+        return;
+      }
+      if ("multipleSheets" in json) {
+        setSheetNames(json.sheetNames);
+        setStep("choose-sheet");
         return;
       }
       setPreview(json);
@@ -134,7 +148,7 @@ export function ExcelImportDialog() {
                 <button
                   type="button"
                   disabled={isPending}
-                  onClick={analyze}
+                  onClick={() => analyze()}
                   className="tap-scale h-12 flex-1 rounded-xl bg-[var(--foreground)] text-sm font-bold text-white disabled:opacity-50"
                 >
                   {isPending ? "Analyse en cours…" : "Analyser le fichier"}
@@ -146,9 +160,36 @@ export function ExcelImportDialog() {
             </div>
           ) : null}
 
+          {step === "choose-sheet" ? (
+            <div className="mt-4 space-y-4">
+              <p className="text-sm font-semibold text-[var(--foreground)]">Plusieurs feuilles détectées.</p>
+              <p className="text-sm text-[var(--muted)]">Choisissez celle à importer :</p>
+              <div className="space-y-2">
+                {sheetNames.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => analyze(name)}
+                    className="tap-scale block w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm font-semibold text-[var(--foreground)] hover:border-[var(--primary)] disabled:opacity-50"
+                  >
+                    📄 {name}
+                  </button>
+                ))}
+              </div>
+              {error ? <p role="alert" className="text-sm font-medium text-[var(--danger)]">{error}</p> : null}
+              <button type="button" onClick={close} className="tap-scale h-11 w-full rounded-xl px-4 text-sm font-semibold text-[var(--muted)]">
+                Annuler
+              </button>
+            </div>
+          ) : null}
+
           {step === "preview" && preview ? (
             <div className="mt-4 space-y-4">
-              <p className="text-sm font-semibold text-[var(--foreground)]">{preview.summary.total} ligne{preview.summary.total > 1 ? "s" : ""} détectée{preview.summary.total > 1 ? "s" : ""}</p>
+              <p className="text-sm font-semibold text-[var(--foreground)]">
+                {preview.summary.total} ligne{preview.summary.total > 1 ? "s" : ""} détectée{preview.summary.total > 1 ? "s" : ""}
+                {sheetNames.length > 0 ? ` (feuille "${preview.sheetName}")` : ""}
+              </p>
               <div className="flex flex-wrap gap-3 text-sm">
                 <span className="text-[var(--success)]">✅ {preview.summary.valid} valide{preview.summary.valid > 1 ? "s" : ""}</span>
                 <span className="text-[var(--brand-gold)]">⚠️ {preview.summary.duplicates} doublon{preview.summary.duplicates > 1 ? "s" : ""}</span>

@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { getChildForAdmin } from "@/features/presence/application/queries";
 import { getChildHistory } from "@/features/presence/application/history-queries";
+import { ChildActiveToggle } from "@/features/presence/ui/child-active-toggle";
 import { ChildForm } from "@/features/presence/ui/child-form";
+import { DeleteChildDialog } from "@/features/presence/ui/delete-child-dialog";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatDateLong, formatTime } from "@/lib/format";
 import { getActivitiesList } from "@/server/data-source";
@@ -22,10 +24,17 @@ export default async function EditChildPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">
-          {child.firstName} {child.lastName}
-        </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">
+            {child.firstName} {child.lastName}
+          </h1>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            {child.active ? "🟢 Actif" : "🔴 Désactivé"}
+            {child.isDemo ? " · Démo" : ""}
+          </p>
+        </div>
+        <ChildActiveToggle childId={child.id} active={child.active} />
       </div>
       <ChildForm
         activities={activities}
@@ -63,6 +72,16 @@ export default async function EditChildPage({ params }: { params: Promise<{ id: 
             </CardContent>
           </Card>
         )}
+      </section>
+
+      <section className="rounded-2xl border border-[var(--danger)]/30 bg-red-50/40 p-5">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--danger)]">Zone dangereuse</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Le bouton {child.active ? "Désactiver" : "Réactiver"} en haut de page retire l&apos;enfant des listes actives sans rien perdre. La suppression définitive ci-dessous est irréversible.
+        </p>
+        <div className="mt-3">
+          <DeleteChildDialog childId={child.id} childName={`${child.firstName} ${child.lastName}`} />
+        </div>
       </section>
     </div>
   );

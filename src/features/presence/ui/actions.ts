@@ -5,6 +5,7 @@ import {
   assignMonitor,
   closeActivityDay,
   createChild,
+  deleteChildPermanently,
   inviteMonitor,
   markAbsent,
   markArrived,
@@ -127,6 +128,14 @@ export async function updateChildAction(childId: string, input: UpdateChildInput
 export async function setChildActiveAction(childId: string, active: boolean): Promise<ActionResult> {
   await requireUser("ADMIN");
   const result = await toResult(() => setChildActive(childId, active));
+  revalidatePath("/admin/children");
+  revalidatePath("/activities");
+  return result;
+}
+
+export async function deleteChildPermanentlyAction(childId: string, confirmationText: string): Promise<ActionResult> {
+  await requireUser("ADMIN");
+  const result = await toResult(() => deleteChildPermanently(childId, confirmationText));
   revalidatePath("/admin/children");
   revalidatePath("/activities");
   return result;

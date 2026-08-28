@@ -133,3 +133,27 @@ export async function updateChild(childId: string, update: SupabaseChildUpdate):
   if (error) throw error;
   return data ? mapRow(data) : null;
 }
+
+export class ChildHasHistoryError extends Error {}
+
+/**
+ * Physical deletion, not deactivation. Deliberately relies on the database's
+ * own protection rather than checking history here first: attendance.child_id
+ * is declared ON DELETE RESTRICT (see the foundation migration), so Postgres
+ * itself refuses this delete — atomically and without a race — for any child
+ * who has ever had a single presence recorded. Error 23503 is a foreign key
+ * violation; that specific code is what distinguishes "blocked by history"
+ * from any other failure.
+ */
+export async function deleteChildPermanently(childId: string): Promise<void> {
+  const supabase = getServiceRoleClient();
+  const { error } = await supabase.from("children").delete().eq("organization_id", ORGANIZATION_ID).eq("id", childId);
+  if (error) {
+    if (error.code === "23503") {
+      throw new ChildHasHistoryError(
+        "Impossible de supprimer : cet enfant a un historique de présence. Utilisez plutôt Désactiver pour le retirer sans perdre l'historique.",
+      );
+    }
+    throw error;
+  }
+}

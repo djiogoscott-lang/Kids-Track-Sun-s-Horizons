@@ -2,6 +2,7 @@ import {
   addNotificationRecord,
   closeDay,
   createChildRecord,
+  deleteChildRecordPermanently,
   getActivitiesList,
   getAttendanceMap,
   getChildById,
@@ -125,6 +126,20 @@ export async function setChildActive(childId: string, active: boolean): Promise<
   const updated = await updateChildRecord(childId, { active });
   if (!updated) throw new PresenceCommandError("Enfant introuvable.");
   return updated;
+}
+
+/**
+ * confirmationText is re-checked here, not just enforced by a disabled
+ * button in the UI — the "type SUPPRIMER" requirement is a safeguard against
+ * misclicks, and a client-only check would be trivial to bypass.
+ */
+export async function deleteChildPermanently(childId: string, confirmationText: string): Promise<void> {
+  if (confirmationText.trim().toUpperCase() !== "SUPPRIMER") {
+    throw new PresenceCommandError('Tapez "SUPPRIMER" pour confirmer.');
+  }
+  const child = await getChildById(childId);
+  if (!child) throw new PresenceCommandError("Enfant introuvable.");
+  await deleteChildRecordPermanently(childId);
 }
 
 export async function sendNotification(activityId: string, message: string, createdByUserId: string, createdByName: string) {

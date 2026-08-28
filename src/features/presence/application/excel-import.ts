@@ -138,6 +138,15 @@ export function validateImportRows(
 
 export class ImportFileError extends Error {}
 
+/** Thrown specifically when the workbook has more than one sheet and the
+ * caller hasn't said which one to use yet — carries the sheet list so the
+ * route can hand it back to the client instead of guessing. */
+export class MultipleSheetsError extends Error {
+  constructor(public readonly sheetNames: string[]) {
+    super("Plusieurs feuilles détectées.");
+  }
+}
+
 function cellText(value: ExcelJS.CellValue): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "object" && "text" in value) return String((value as { text: unknown }).text ?? "");
@@ -145,13 +154,79 @@ function cellText(value: ExcelJS.CellValue): string {
   return String(value);
 }
 
+type FieldKey = "firstName" | "lastName" | "activityName" | "garderie" | "active" | "notes";
+
+// Deliberately small, fixed lists — not fuzzy/"smart" matching. A header
+// that isn't recognized is reported to the admin rather than guessed at.
+const COLUMN_VARIANTS: Record<FieldKey, string[]> = {
+  firstName: ["prenom", "prenoms", "prenom(s)", "first name", "firstname"],
+  lastName: ["nom", "noms", "last name", "lastname", "nom de famille", "surname"],
+  activityName: ["activite", "activites", "activity"],
+  garderie: ["garderie", "daycare"],
+  active: ["actif", "active"],
+  notes: ["notes", "note", "remarque", "remarques", "commentaire", "commentaires"],
+};
+
+const REQUIRED_FIELDS: FieldKey[] = ["firstName", "lastName", "activityName"];
+const FIELD_LABELS: Record<FieldKey, string> = {
+  firstName: "Prénom",
+  lastName: "Nom",
+  activityName: "Activité",
+  garderie: "Garderie",
+  active: "Actif",
+  notes: "Notes",
+};
+
+function matchHeaderField(headerText: string): FieldKey | null {
+  const normalized = normalize(headerText);
+  for (const [field, variants] of Object.entries(COLUMN_VARIANTS) as [FieldKey, string[]][]) {
+    if (variants.includes(normalized)) return field;
+  }
+  return null;
+}
+
 /**
- * Never trusts the upload: extension, size, and row-count are all checked
- * before a single cell is read, and only the first worksheet's plain cell
- * values are ever touched — exceljs does not execute macros or formulas, it
- * only ever returns computed/text values.
+ * Maps header text to fields regardless of column order, so "Nom | Prénom |
+ * Activité" works the same as the official template's order. A header that
+ * matches more than one column, or a missing required column, is reported
+ * back rather than guessed — this is deliberately not "smart" recognition.
  */
-export async function parseImportFile(fileName: string, buffer: Buffer): Promise<RawImportRow[]> {
+function resolveColumnMap(headerRow: ExcelJS.Row): Map<FieldKey, number> {
+  const map = new Map<FieldKey, number>();
+  const ambiguous: FieldKey[] = [];
+
+  headerRow.eachCell((cell, colNumber) => {
+    const field = matchHeaderField(cellText(cell.value));
+    if (!field) return;
+    if (map.has(field)) {
+      if (!ambiguous.includes(field)) ambiguous.push(field);
+      return;
+    }
+    map.set(field, colNumber);
+  });
+
+  if (ambiguous.length > 0) {
+    throw new ImportFileError(
+      `Colonne ambiguë : plusieurs colonnes correspondent à ${ambiguous.map((f) => FIELD_LABELS[f]).join(", ")}. Corrigez les en-têtes du fichier.`,
+    );
+  }
+
+  const missing = REQUIRED_FIELDS.filter((f) => !map.has(f));
+  if (missing.length > 0) {
+    throw new ImportFileError(
+      `Colonne(s) obligatoire(s) introuvable(s) : ${missing.map((f) => FIELD_LABELS[f]).join(", ")}. Utilisez le modèle officiel ou vérifiez les en-têtes.`,
+    );
+  }
+
+  return map;
+}
+
+/**
+ * Never trusts the upload: extension and size are checked before a single
+ * byte is parsed, and only plain cell values are ever read — exceljs does
+ * not execute macros or formulas.
+ */
+export async function loadWorkbook(fileName: string, buffer: Buffer): Promise<ExcelJS.Workbook> {
   if (!/\.xlsx$/i.test(fileName)) {
     throw new ImportFileError("Seuls les fichiers .xlsx sont acceptés.");
   }
@@ -169,28 +244,57 @@ export async function parseImportFile(fileName: string, buffer: Buffer): Promise
   } catch {
     throw new ImportFileError("Fichier illisible — vérifiez qu'il s'agit bien d'un fichier Excel (.xlsx) valide.");
   }
-
-  const sheet = workbook.worksheets[0];
-  if (!sheet) {
+  if (workbook.worksheets.length === 0) {
     throw new ImportFileError("Le fichier ne contient aucune feuille.");
   }
+  return workbook;
+}
+
+/**
+ * Picks the target sheet: the only one if there's just one, the explicitly
+ * requested one by name, or throws MultipleSheetsError so the caller can ask
+ * the admin to choose rather than silently picking one.
+ */
+export function selectSheet(workbook: ExcelJS.Workbook, requestedSheetName?: string): ExcelJS.Worksheet {
+  if (requestedSheetName) {
+    const sheet = workbook.getWorksheet(requestedSheetName);
+    if (!sheet) throw new ImportFileError(`Feuille "${requestedSheetName}" introuvable.`);
+    return sheet;
+  }
+  if (workbook.worksheets.length > 1) {
+    throw new MultipleSheetsError(workbook.worksheets.map((s) => s.name));
+  }
+  return workbook.worksheets[0];
+}
+
+export function parseSheetRows(sheet: ExcelJS.Worksheet): RawImportRow[] {
+  const headerRow = sheet.getRow(1);
+  const columnMap = resolveColumnMap(headerRow);
+
+  const get = (row: ExcelJS.Row, field: FieldKey): string => {
+    const col = columnMap.get(field);
+    return col ? cellText(row.getCell(col).value) : "";
+  };
 
   const rows: RawImportRow[] = [];
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return; // header
     rows.push({
       row: rowNumber,
-      firstName: cellText(row.getCell(1).value),
-      lastName: cellText(row.getCell(2).value),
-      activityName: cellText(row.getCell(3).value),
-      garderie: cellText(row.getCell(4).value),
-      active: cellText(row.getCell(5).value),
-      notes: cellText(row.getCell(6).value),
+      firstName: get(row, "firstName"),
+      lastName: get(row, "lastName"),
+      activityName: get(row, "activityName"),
+      garderie: get(row, "garderie"),
+      active: get(row, "active"),
+      notes: get(row, "notes"),
     });
   });
 
   if (rows.length > MAX_IMPORT_ROWS) {
     throw new ImportFileError(`Trop de lignes (max ${MAX_IMPORT_ROWS}).`);
+  }
+  if (rows.length === 0) {
+    throw new ImportFileError("Le fichier ne contient aucune ligne de données.");
   }
 
   return rows;
