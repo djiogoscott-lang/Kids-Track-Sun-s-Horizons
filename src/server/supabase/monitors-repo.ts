@@ -77,25 +77,46 @@ export async function isEmailAlreadyUsed(email: string): Promise<boolean> {
   return data.users.some((u) => u.email?.toLowerCase() === target);
 }
 
+export type AccountRole = "ADMIN" | "MONITOR";
+
 /**
- * Never handles a password: Supabase's own invitation flow emails the new
- * monitor a link to set their own password on first login. The full_name
- * passed here reaches public.profiles automatically via the on_auth_user_created
- * trigger (see the foundation migration) — inserting it a second time here
- * would just race that trigger.
+ * Creates the account with the password the admin chose — no invitation
+ * email, no user-set-their-own-password step. admin.createUser() is the
+ * server-only Supabase Auth admin API for exactly this; the password is
+ * handed to Supabase directly and never touches any table this app owns
+ * (profiles/organization_memberships/children), never logged, and never
+ * echoed back in the response. The full_name reaches public.profiles
+ * automatically via the on_auth_user_created trigger (see the foundation
+ * migration) — inserting it a second time here would just race that trigger.
+ *
+ * Rolls back the just-created Auth user if the membership insert or
+ * activity assignment fails, so a failure never leaves a half-configured
+ * account with no way to recover it from the UI.
  */
-export async function inviteMonitor(email: string, fullName: string, activityId: string | null): Promise<string> {
+export async function createAccountWithPassword(
+  email: string,
+  password: string,
+  fullName: string,
+  role: AccountRole,
+  activityId: string | null,
+): Promise<string> {
   const supabase = getServiceRoleClient();
-  const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
-    data: { full_name: fullName },
+  const { data, error } = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: fullName },
   });
   if (error) throw error;
   const userId = data.user.id;
 
   const { error: membershipError } = await supabase
     .from("organization_memberships")
-    .insert({ organization_id: ORGANIZATION_ID, user_id: userId, role: "MONITOR" });
-  if (membershipError) throw membershipError;
+    .insert({ organization_id: ORGANIZATION_ID, user_id: userId, role });
+  if (membershipError) {
+    await supabase.auth.admin.deleteUser(userId);
+    throw membershipError;
+  }
 
   if (activityId) {
     const { error: activityError } = await supabase
@@ -103,7 +124,11 @@ export async function inviteMonitor(email: string, fullName: string, activityId:
       .update({ monitor_id: userId })
       .eq("id", activityId)
       .eq("organization_id", ORGANIZATION_ID);
-    if (activityError) throw activityError;
+    if (activityError) {
+      await supabase.from("organization_memberships").delete().eq("user_id", userId).eq("organization_id", ORGANIZATION_ID);
+      await supabase.auth.admin.deleteUser(userId);
+      throw activityError;
+    }
   }
 
   return userId;
@@ -112,5 +137,16 @@ export async function inviteMonitor(email: string, fullName: string, activityId:
 export async function updateMonitorName(monitorId: string, fullName: string): Promise<void> {
   const supabase = getServiceRoleClient();
   const { error } = await supabase.from("profiles").update({ full_name: fullName }).eq("id", monitorId);
+  if (error) throw error;
+}
+
+/**
+ * The only place a monitor/admin's password is ever touched server-side —
+ * updateUserById() sets it directly in Supabase Auth. Never read back,
+ * never logged: the caller only learns whether this succeeded.
+ */
+export async function updateAccountPassword(userId: string, newPassword: string): Promise<void> {
+  const supabase = getServiceRoleClient();
+  const { error } = await supabase.auth.admin.updateUserById(userId, { password: newPassword });
   if (error) throw error;
 }

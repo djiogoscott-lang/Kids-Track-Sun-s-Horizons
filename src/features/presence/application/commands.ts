@@ -1,6 +1,7 @@
 import {
   addNotificationRecord,
   closeDay,
+  createAccountRecord,
   createChildRecord,
   deleteChildRecordPermanently,
   getActivitiesList,
@@ -8,12 +9,12 @@ import {
   getChildById,
   getDayState,
   getMonitorsList,
-  inviteMonitorRecord,
   isMonitorEmailTaken,
   markActivityNotificationsReadData,
   setAttendance,
   setMonitorActiveRecord,
   setMonitorForActivity,
+  updateAccountPasswordRecord,
   updateChildRecord,
   updateMonitorNameRecord,
   type ChildRecord,
@@ -158,21 +159,49 @@ export async function setMonitorActive(monitorId: string, active: boolean, actin
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LENGTH = 8;
 
-export async function inviteMonitor(email: string, firstName: string, lastName: string, activityId: string | null) {
+function assertValidPassword(password: string) {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new PresenceCommandError("Le mot de passe ne respecte pas les conditions requises.");
+  }
+}
+
+/**
+ * The admin chooses the password directly — no invitation email, no
+ * "set your own password" step. Validated here (format, length, uniqueness)
+ * before ever reaching Supabase Auth; createAccountRecord() rolls back the
+ * Auth user itself if a later step (membership, activity) fails, so this
+ * never leaves a half-created account behind.
+ */
+export async function createAccount(
+  email: string,
+  password: string,
+  firstName: string,
+  lastName: string,
+  role: "ADMIN" | "MONITOR",
+  activityId: string | null,
+) {
   const trimmedEmail = email.trim();
   if (!EMAIL_PATTERN.test(trimmedEmail)) throw new PresenceCommandError("Adresse email invalide.");
   if (!firstName.trim() || !lastName.trim()) throw new PresenceCommandError("Le prénom et le nom sont obligatoires.");
-  if (await isMonitorEmailTaken(trimmedEmail)) throw new PresenceCommandError("Cette adresse email est déjà utilisée.");
+  assertValidPassword(password);
+  if (await isMonitorEmailTaken(trimmedEmail)) throw new PresenceCommandError("Cette adresse e-mail est déjà utilisée.");
   if (activityId) {
     const activities = await getActivitiesList();
     if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
   }
   const fullName = `${firstName.trim()} ${lastName.trim()}`;
-  return inviteMonitorRecord(trimmedEmail, fullName, activityId);
+  return createAccountRecord(trimmedEmail, password, fullName, role, activityId);
 }
 
 export async function updateMonitorName(monitorId: string, fullName: string) {
   if (!fullName.trim()) throw new PresenceCommandError("Le nom est obligatoire.");
   await updateMonitorNameRecord(monitorId, fullName.trim());
+}
+
+export async function updateMonitorPassword(monitorId: string, newPassword: string, confirmPassword: string) {
+  if (newPassword !== confirmPassword) throw new PresenceCommandError("Les deux mots de passe ne correspondent pas.");
+  assertValidPassword(newPassword);
+  await updateAccountPasswordRecord(monitorId, newPassword);
 }

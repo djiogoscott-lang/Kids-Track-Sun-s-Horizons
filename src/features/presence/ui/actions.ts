@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import {
   assignMonitor,
   closeActivityDay,
+  createAccount,
   createChild,
   deleteChildPermanently,
-  inviteMonitor,
   markAbsent,
   markArrived,
   markLeft,
@@ -17,6 +17,7 @@ import {
   setMonitorActive,
   updateChild,
   updateMonitorName,
+  updateMonitorPassword,
   type UpdateChildInput,
 } from "@/features/presence/application/commands";
 import { getActivityIdForMonitor } from "@/features/presence/application/queries";
@@ -157,14 +158,21 @@ export async function setMonitorActiveAction(monitorId: string, active: boolean)
   return result;
 }
 
-export async function inviteMonitorAction(
+/**
+ * Creating an ADMIN account is gated the exact same way as a MONITOR one:
+ * requireUser("ADMIN") means only an existing admin can ever reach either
+ * branch — there is no separate, weaker check for the ADMIN role case.
+ */
+export async function createAccountAction(
   email: string,
+  password: string,
   firstName: string,
   lastName: string,
+  role: "ADMIN" | "MONITOR",
   activityId: string | null,
 ): Promise<ActionResult> {
   await requireUser("ADMIN");
-  const result = await toResult(() => inviteMonitor(email, firstName, lastName, activityId));
+  const result = await toResult(() => createAccount(email, password, firstName, lastName, role, activityId));
   revalidatePath("/admin/monitors");
   revalidatePath("/activities");
   return result;
@@ -174,6 +182,12 @@ export async function updateMonitorNameAction(monitorId: string, fullName: strin
   await requireUser("ADMIN");
   const result = await toResult(() => updateMonitorName(monitorId, fullName));
   revalidatePath("/admin/monitors");
+  return result;
+}
+
+export async function updateMonitorPasswordAction(monitorId: string, newPassword: string, confirmPassword: string): Promise<ActionResult> {
+  await requireUser("ADMIN");
+  const result = await toResult(() => updateMonitorPassword(monitorId, newPassword, confirmPassword));
   return result;
 }
 

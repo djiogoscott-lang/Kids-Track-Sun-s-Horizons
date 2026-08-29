@@ -5,6 +5,7 @@ import { AddMonitorDialog } from "@/features/presence/ui/add-monitor-dialog";
 import { AssignmentForm } from "@/features/presence/ui/assignment-form";
 import { MonitorActiveToggle } from "@/features/presence/ui/monitor-active-toggle";
 import { MonitorNameEdit } from "@/features/presence/ui/monitor-name-edit";
+import { MonitorPasswordDialog } from "@/features/presence/ui/monitor-password-dialog";
 import { requireUser } from "@/lib/auth/require-user";
 import { getActivitiesList, getMonitorsList } from "@/server/data-source";
 
@@ -37,11 +38,12 @@ export default async function AdminMonitorsPage() {
               {monitorAdminRows.map((monitor) => (
                 <div key={monitor.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <p className={`font-semibold ${monitor.active ? "text-[var(--foreground)]" : "text-[var(--muted)] line-through"}`}>
                         {monitor.name}
                       </p>
                       <MonitorNameEdit monitorId={monitor.id} currentName={monitor.name} />
+                      <MonitorPasswordDialog monitorId={monitor.id} />
                     </div>
                     <p className="text-xs text-[var(--muted)]">
                       {monitor.email ?? "Email indisponible"} · Moniteur · {monitor.activityName ?? "Aucune activité assignée"}

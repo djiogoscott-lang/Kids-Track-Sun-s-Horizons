@@ -385,11 +385,17 @@ export async function isMonitorEmailTaken(email: string): Promise<boolean> {
   return supaMonitors.isEmailAlreadyUsed(email);
 }
 
-export async function inviteMonitorRecord(email: string, fullName: string, activityId: string | null): Promise<string> {
+export async function createAccountRecord(
+  email: string,
+  password: string,
+  fullName: string,
+  role: "ADMIN" | "MONITOR",
+  activityId: string | null,
+): Promise<string> {
   if (!isSupabaseConfigured) {
-    throw new PresenceCommandError("L'ajout d'un moniteur nécessite Supabase.");
+    throw new PresenceCommandError("La création d'un compte nécessite Supabase.");
   }
-  return supaMonitors.inviteMonitor(email, fullName, activityId);
+  return supaMonitors.createAccountWithPassword(email, password, fullName, role, activityId);
 }
 
 export async function updateMonitorNameRecord(monitorId: string, fullName: string): Promise<void> {
@@ -397,4 +403,11 @@ export async function updateMonitorNameRecord(monitorId: string, fullName: strin
     throw new PresenceCommandError("La modification d'un moniteur nécessite Supabase.");
   }
   return supaMonitors.updateMonitorName(monitorId, fullName);
+}
+
+export async function updateAccountPasswordRecord(userId: string, newPassword: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new PresenceCommandError("La modification du mot de passe nécessite Supabase.");
+  }
+  return supaMonitors.updateAccountPassword(userId, newPassword);
 }
