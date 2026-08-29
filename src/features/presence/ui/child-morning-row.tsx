@@ -43,9 +43,12 @@ export function ChildMorningRow({
         >
           {child.firstName.charAt(0)}
         </span>
-        <p className="min-w-0 flex-1 truncate text-lg font-bold text-[var(--foreground)]">
-          {child.firstName} {child.lastName}
-        </p>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-bold text-[var(--foreground)]">
+            {child.firstName} {child.lastName}
+          </p>
+          {status === "NOT_MARKED" ? <span className="text-xs font-semibold text-[var(--primary)]">Non traité</span> : null}
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2.5">

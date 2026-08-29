@@ -5,7 +5,7 @@ import {
   getChildrenList,
   getDayStatesForDateRange,
 } from "@/server/data-source";
-import { getActivityDetail, type ActivityDetail } from "./queries";
+import { getActivityDetail, type ActivityDetail, type SessionState } from "./queries";
 import { daycareReason, eveningStatus } from "@/features/presence/domain/daycare";
 import { morningStatus, type PresenceRecord } from "@/features/presence/domain/types";
 
@@ -23,10 +23,12 @@ export interface DaySummaryRow {
   total: number;
   arrivedCount: number;
   absentCount: number;
+  notMarkedCount: number;
   leftCount: number;
   garderieCount: number;
   closed: boolean;
   closedAt: Date | null;
+  sessionState: SessionState;
 }
 
 export async function getDaySummary(date: Date): Promise<DaySummaryRow[]> {
@@ -41,18 +43,25 @@ export async function getDaySummary(date: Date): Promise<DaySummaryRow[]> {
       total: d?.morningCounters.total ?? 0,
       arrivedCount: d?.morningCounters.arrivedCount ?? 0,
       absentCount: d?.morningCounters.absentCount ?? 0,
+      notMarkedCount: d?.morningCounters.notMarkedCount ?? 0,
       leftCount: d?.eveningCounters.leftCount ?? 0,
       garderieCount: d?.garderieCount ?? 0,
       closed: d?.closed ?? false,
       closedAt: d?.closedAt ?? null,
+      sessionState: d?.sessionState ?? "NOT_STARTED",
     };
   });
 }
 
 export interface WeekDaySummary {
   date: string;
+  /** false when nobody has taken attendance yet for this date (future date,
+   * or a past date the app was never opened for) — never fabricate absents
+   * from a roster count in that case. */
+  hasSession: boolean;
   arrivedCount: number;
   absentCount: number;
+  notMarkedCount: number;
   leftCount: number;
   garderieCount: number;
 }
@@ -72,7 +81,7 @@ export async function getWeekSummary(startDate: Date, activityId?: string): Prom
   const closedByKey = new Map(dayStateRows.map((d) => [`${d.activityId}_${d.date}`, d.closed]));
   const totalRoster = allChildren.filter((c) => c.active && (!activityId || c.activityId === activityId)).length;
 
-  const byDate = new Map<string, WeekDaySummary>();
+  const byDate = new Map<string, { date: string; arrivedCount: number; absentCount: number; leftCount: number; garderieCount: number }>();
   for (let i = 0; i < 5; i++) {
     const d = new Date(startDate);
     d.setDate(d.getDate() + i);
@@ -86,7 +95,11 @@ export async function getWeekSummary(startDate: Date, activityId?: string): Prom
     const child = childById.get(row.childId);
     if (!child) continue;
 
+    // A row only exists once attendance has actually been recorded for that
+    // child/date — arrived=false here means an explicit "Absent" mark, never
+    // a child nobody has touched yet (those never get a row at all).
     if (row.arrived) bucket.arrivedCount += 1;
+    else bucket.absentCount += 1;
     if (row.left) bucket.leftCount += 1;
 
     const closed = closedByKey.get(`${row.activityId}_${row.date}`) ?? false;
@@ -96,11 +109,13 @@ export async function getWeekSummary(startDate: Date, activityId?: string): Prom
     }
   }
 
-  for (const bucket of byDate.values()) {
-    bucket.absentCount = Math.max(0, totalRoster - bucket.arrivedCount);
-  }
-
-  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  return [...byDate.values()]
+    .map((bucket) => ({
+      ...bucket,
+      notMarkedCount: Math.max(0, totalRoster - bucket.arrivedCount - bucket.absentCount),
+      hasSession: bucket.arrivedCount + bucket.absentCount > 0,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export interface ChildHistoryRow {

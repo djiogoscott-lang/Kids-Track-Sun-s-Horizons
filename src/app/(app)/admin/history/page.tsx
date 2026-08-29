@@ -51,31 +51,47 @@ export default async function AdminHistoryPage({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          <div className="rounded-2xl bg-[var(--success-bg)] px-4 py-3">
-            <p className="text-2xl font-extrabold text-[var(--success)]">{detail.morningCounters.arrivedCount}</p>
-            <p className="text-xs font-semibold text-[var(--success)]">🟢 Présents</p>
-          </div>
-          <div className="rounded-2xl bg-red-50 px-4 py-3">
-            <p className="text-2xl font-extrabold text-[var(--danger)]">{detail.morningCounters.absentCount}</p>
-            <p className="text-xs font-semibold text-[var(--danger)]">🔴 Absents</p>
-          </div>
-          <div className="rounded-2xl bg-[var(--tint-blue-bg)] px-4 py-3">
-            <p className="text-2xl font-extrabold text-[var(--brand-blue)]">{detail.eveningCounters.leftCount}</p>
-            <p className="text-xs font-semibold text-[var(--brand-blue)]">🔵 Partis</p>
-          </div>
-          <div className="rounded-2xl bg-[var(--warning-bg)] px-4 py-3">
-            <p className="text-2xl font-extrabold text-[var(--brand-gold)]">{detail.garderieCount}</p>
-            <p className="text-xs font-semibold text-[var(--brand-gold)]">🟠 Garderie</p>
-          </div>
-        </div>
-
-        {!detail.closed ? (
+        {detail.sessionState === "NOT_STARTED" ? (
           <p className="rounded-xl bg-[var(--background)] px-4 py-3 text-sm text-[var(--muted)]">
-            Cette journée n&apos;a pas été clôturée par le moniteur — les statuts « encore présent » ci-dessous n&apos;ont pas basculé automatiquement en garderie.
+            Aucune séance enregistrée pour cette date. Pas encore de données.
           </p>
-        ) : null}
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+              <div className="rounded-2xl bg-[var(--success-bg)] px-4 py-3">
+                <p className="text-2xl font-extrabold text-[var(--success)]">{detail.morningCounters.arrivedCount}</p>
+                <p className="text-xs font-semibold text-[var(--success)]">🟢 Présents</p>
+              </div>
+              <div className="rounded-2xl bg-red-50 px-4 py-3">
+                <p className="text-2xl font-extrabold text-[var(--danger)]">{detail.morningCounters.absentCount}</p>
+                <p className="text-xs font-semibold text-[var(--danger)]">🔴 Absents</p>
+              </div>
+              <div className="rounded-2xl bg-[var(--tint-blue-bg)] px-4 py-3">
+                <p className="text-2xl font-extrabold text-[var(--brand-blue)]">{detail.eveningCounters.leftCount}</p>
+                <p className="text-xs font-semibold text-[var(--brand-blue)]">🔵 Partis</p>
+              </div>
+              <div className="rounded-2xl bg-[var(--warning-bg)] px-4 py-3">
+                <p className="text-2xl font-extrabold text-[var(--brand-gold)]">{detail.garderieCount}</p>
+                <p className="text-xs font-semibold text-[var(--brand-gold)]">🟠 Garderie</p>
+              </div>
+              {detail.morningCounters.notMarkedCount > 0 ? (
+                <div className="rounded-2xl bg-slate-100 px-4 py-3">
+                  <p className="text-2xl font-extrabold text-[var(--primary)]">{detail.morningCounters.notMarkedCount}</p>
+                  <p className="text-xs font-semibold text-[var(--primary)]">⚪ Non traités</p>
+                </div>
+              ) : null}
+            </div>
 
+            {detail.sessionState === "IN_PROGRESS" ? (
+              <p className="rounded-xl bg-[var(--background)] px-4 py-3 text-sm text-[var(--muted)]">
+                Cette journée n&apos;a pas été clôturée par le moniteur — les statuts « encore présent » ci-dessous n&apos;ont pas basculé automatiquement en garderie.
+              </p>
+            ) : null}
+          </>
+        )}
+
+        {detail.sessionState === "NOT_STARTED" ? null : (
+        <>
         <section className="space-y-3">
           <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--success)]">🟢 Présents ({detail.morningList.filter((c) => c.status === "ARRIVED").length})</h2>
           {detail.morningList.filter((c) => c.status === "ARRIVED").length === 0 ? (
@@ -143,6 +159,8 @@ export default async function AdminHistoryPage({
             </Card>
           )}
         </section>
+        </>
+        )}
       </div>
     );
   }
@@ -191,10 +209,17 @@ export default async function AdminHistoryPage({
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                  <span className="text-[var(--success)]">🟢 {row.arrivedCount} présents</span>
-                  <span className="text-[var(--danger)]">🔴 {row.absentCount} absents</span>
-                  <span className="text-[var(--brand-blue)]">🔵 {row.leftCount} partis</span>
-                  <span className="text-[var(--brand-gold)]">🟠 {row.garderieCount} garderie</span>
+                  {row.sessionState === "NOT_STARTED" ? (
+                    <span className="text-[var(--muted)]">Aucune séance enregistrée.</span>
+                  ) : (
+                    <>
+                      <span className="text-[var(--success)]">🟢 {row.arrivedCount} présents</span>
+                      <span className="text-[var(--danger)]">🔴 {row.absentCount} absents</span>
+                      <span className="text-[var(--brand-blue)]">🔵 {row.leftCount} partis</span>
+                      <span className="text-[var(--brand-gold)]">🟠 {row.garderieCount} garderie</span>
+                      {row.notMarkedCount > 0 ? <span className="text-[var(--primary)]">⚪ {row.notMarkedCount} à traiter</span> : null}
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>

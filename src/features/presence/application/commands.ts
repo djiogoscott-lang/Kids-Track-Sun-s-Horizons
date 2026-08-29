@@ -7,6 +7,7 @@ import {
   getActivitiesList,
   getAttendanceMap,
   getChildById,
+  getChildrenList,
   getDayState,
   getMonitorsList,
   isMonitorEmailTaken,
@@ -79,6 +80,17 @@ export async function closeActivityDay(activityId: string, closedByUserId: strin
   if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
   const dayState = await getDayState(activityId, now);
   if (dayState.closed) throw new PresenceCommandError("Cette séance est déjà clôturée.");
+
+  // Finalize the roll call: once the session is closed there is no more
+  // "not yet marked" — anyone still untouched becomes explicitly absent, so
+  // a closed day's counters are always real numbers, never a leftover
+  // NOT_MARKED bucket implying the appel is somehow still open.
+  const [children, records] = await Promise.all([getChildrenList(), getAttendanceMap(now, activityId)]);
+  const unmarked = children.filter((c) => c.activityId === activityId && c.active && !records.has(c.id));
+  for (const child of unmarked) {
+    await setAttendance(child.id, activityId, now, { arrived: false, arrivedAt: null, departed: false, departedAt: null }, closedByUserId);
+  }
+
   await closeDay(activityId, now, closedByUserId, closedByName);
 }
 
@@ -94,9 +106,11 @@ async function validateChildInput(input: Pick<NewChildRecordInput, "firstName" |
 
 export async function createChild(input: NewChildRecordInput): Promise<ChildRecord> {
   await validateChildInput(input);
-  const child = await createChildRecord(input);
-  await setAttendance(child.id, child.activityId, new Date(), { arrived: false, arrivedAt: null, departed: false, departedAt: null }, null);
-  return child;
+  // Deliberately no attendance row seeded here: "no row for (child, date)"
+  // is exactly what NOT_MARKED means (see morningStatus in domain/types.ts).
+  // Seeding an {arrived: false} placeholder would make a brand-new child
+  // indistinguishable from one a monitor explicitly marked absent.
+  return createChildRecord(input);
 }
 
 export interface UpdateChildInput {
@@ -114,12 +128,10 @@ export async function updateChild(childId: string, input: UpdateChildInput): Pro
 
   const updated = await updateChildRecord(childId, input);
   if (!updated) throw new PresenceCommandError("Enfant introuvable.");
-
-  // Moving a child to another activity resets today's presence: their old
-  // record belongs to an activity they are no longer part of.
-  if (existing.activityId !== input.activityId) {
-    await setAttendance(childId, input.activityId, new Date(), { arrived: false, arrivedAt: null, departed: false, departedAt: null }, null);
-  }
+  // Moving a child to another activity needs no attendance write: their
+  // attendance map query is scoped by activity_id, so any prior row (still
+  // tagged with the old activity) simply won't match the new activity's
+  // query — they naturally start NOT_MARKED there without a placeholder.
   return updated;
 }
 

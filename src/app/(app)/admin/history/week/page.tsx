@@ -72,10 +72,17 @@ export default async function AdminHistoryWeekPage({ searchParams }: { searchPar
                     <span className="text-sm font-semibold text-[var(--primary)]">Voir la journée →</span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                    <span className="text-[var(--success)]">🟢 {day.arrivedCount} présents</span>
-                    <span className="text-[var(--danger)]">🔴 {day.absentCount} absents</span>
-                    <span className="text-[var(--brand-blue)]">🔵 {day.leftCount} partis</span>
-                    <span className="text-[var(--brand-gold)]">🟠 {day.garderieCount} garderie</span>
+                    {!day.hasSession ? (
+                      <span className="text-[var(--muted)]">Aucune séance enregistrée.</span>
+                    ) : (
+                      <>
+                        <span className="text-[var(--success)]">🟢 {day.arrivedCount} présents</span>
+                        <span className="text-[var(--danger)]">🔴 {day.absentCount} absents</span>
+                        <span className="text-[var(--brand-blue)]">🔵 {day.leftCount} partis</span>
+                        <span className="text-[var(--brand-gold)]">🟠 {day.garderieCount} garderie</span>
+                        {day.notMarkedCount > 0 ? <span className="text-[var(--primary)]">⚪ {day.notMarkedCount} à traiter</span> : null}
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>

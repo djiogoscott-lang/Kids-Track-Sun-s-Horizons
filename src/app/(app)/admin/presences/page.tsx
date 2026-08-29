@@ -13,6 +13,7 @@ export default async function AdminPresencesPage() {
   const total = activities.reduce((sum, a) => sum + a.morningCounters.total, 0);
   const arrived = activities.reduce((sum, a) => sum + a.morningCounters.arrivedCount, 0);
   const absent = activities.reduce((sum, a) => sum + a.morningCounters.absentCount, 0);
+  const notMarked = activities.reduce((sum, a) => sum + a.morningCounters.notMarkedCount, 0);
 
   return (
     <div className="animate-float-in space-y-6">
@@ -27,6 +28,7 @@ export default async function AdminPresencesPage() {
           { value: total, label: "Enfants" },
           { value: arrived, label: "Arrivés", tone: "success" },
           { value: absent, label: "Absents", tone: "danger" },
+          { value: notMarked, label: "À traiter", tone: "primary" },
         ]}
       />
 

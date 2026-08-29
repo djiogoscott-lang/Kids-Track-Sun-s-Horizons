@@ -26,7 +26,7 @@ export function ActivityCard({ activity }: { activity: ActivityOverview }) {
           <p className="font-heading mt-4 text-lg font-bold uppercase tracking-wide text-[var(--foreground)]">{activity.name}</p>
           <p className="text-sm text-[var(--muted)]">{activity.monitorName}</p>
 
-          <div className="mt-4 flex items-center gap-3 text-sm">
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <span className="font-semibold text-[var(--foreground)]">{activity.total} enfants</span>
             <span className="flex items-center gap-1 text-[var(--success)]">
               <span aria-hidden="true">🟢</span>
@@ -36,6 +36,12 @@ export function ActivityCard({ activity }: { activity: ActivityOverview }) {
               <span aria-hidden="true">🔴</span>
               {activity.absentCount}
             </span>
+            {activity.notMarkedCount > 0 ? (
+              <span className="flex items-center gap-1 text-[var(--primary)]">
+                <span aria-hidden="true">⚪</span>
+                {activity.notMarkedCount} à traiter
+              </span>
+            ) : null}
           </div>
 
           <div className="mt-4 flex flex-1 items-end">

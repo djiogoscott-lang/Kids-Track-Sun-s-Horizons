@@ -48,6 +48,7 @@ export interface ActivityOverview {
   total: number;
   arrivedCount: number;
   absentCount: number;
+  notMarkedCount: number;
   closed: boolean;
 }
 
@@ -57,15 +58,16 @@ export async function listActivitiesOverview(now = new Date()): Promise<Activity
   return Promise.all(
     activities.map(async (activity) => {
       const children = allChildren.filter((c) => c.activityId === activity.id && c.active);
-      const arrivedCount = children.filter((c) => records.get(c.id)?.arrived).length;
+      const statuses = children.map((c) => morningStatus(records.get(c.id)));
       const dayState = await getDayState(activity.id, now);
       return {
         id: activity.id,
         name: activity.name,
         monitorName: await monitorName(activity.monitorId ?? ""),
         total: children.length,
-        arrivedCount,
-        absentCount: children.length - arrivedCount,
+        arrivedCount: statuses.filter((s) => s === "ARRIVED").length,
+        absentCount: statuses.filter((s) => s === "ABSENT").length,
+        notMarkedCount: statuses.filter((s) => s === "NOT_MARKED").length,
         closed: dayState.closed,
       };
     }),
@@ -99,13 +101,22 @@ export interface ChildGarderieRow {
   reason: DaycareReason;
 }
 
+/**
+ * NOT_STARTED: nobody has been marked yet. IN_PROGRESS: some children
+ * marked, some not, session still open. CLOSED: the monitor closed the day
+ * (closeActivityDay finalizes every remaining NOT_MARKED child to ABSENT at
+ * that point, so "closed" and "everyone marked" always agree afterward).
+ */
+export type SessionState = "NOT_STARTED" | "IN_PROGRESS" | "CLOSED";
+
 export interface ActivityDetail {
   id: string;
   name: string;
   monitorName: string;
   closed: boolean;
   closedAt: Date | null;
-  morningCounters: { total: number; arrivedCount: number; absentCount: number };
+  sessionState: SessionState;
+  morningCounters: { total: number; arrivedCount: number; absentCount: number; notMarkedCount: number };
   eveningCounters: EveningCounters;
   garderieCount: number;
   morningList: ChildMorningRow[];
@@ -137,8 +148,7 @@ export async function getActivityDetail(activityId: string, now = new Date()): P
   const children = sortByName(allChildren.filter((c) => c.activityId === activityId && c.active));
 
   const morningList: ChildMorningRow[] = children.map((child) => {
-    const record = records.get(child.id) ?? emptyRecord(child.id, activityId);
-    return { childId: child.id, firstName: child.firstName, lastName: child.lastName, status: morningStatus(record) };
+    return { childId: child.id, firstName: child.firstName, lastName: child.lastName, status: morningStatus(records.get(child.id)) };
   });
 
   // Children registered for automatic daycare skip this activity's own
@@ -150,6 +160,14 @@ export async function getActivityDetail(activityId: string, now = new Date()): P
   });
 
   const arrivedCount = morningList.filter((c) => c.status === "ARRIVED").length;
+  const absentCount = morningList.filter((c) => c.status === "ABSENT").length;
+  const notMarkedCount = morningList.filter((c) => c.status === "NOT_MARKED").length;
+
+  const sessionState: SessionState = dayState.closed
+    ? "CLOSED"
+    : notMarkedCount === morningList.length
+      ? "NOT_STARTED"
+      : "IN_PROGRESS";
 
   const garderieList: ChildGarderieRow[] = children.flatMap((child) => {
     const record = records.get(child.id) ?? emptyRecord(child.id, activityId);
@@ -163,7 +181,8 @@ export async function getActivityDetail(activityId: string, now = new Date()): P
     monitorName: await monitorName(activity.monitorId ?? ""),
     closed: dayState.closed,
     closedAt: dayState.closedAt,
-    morningCounters: { total: morningList.length, arrivedCount, absentCount: morningList.length - arrivedCount },
+    sessionState,
+    morningCounters: { total: morningList.length, arrivedCount, absentCount, notMarkedCount },
     eveningCounters: {
       presentTotal: eveningList.length,
       leftCount: eveningList.filter((c) => c.status === "LEFT").length,

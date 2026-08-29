@@ -69,7 +69,13 @@ export default async function ActivityDetailPage({
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Moniteur : {activity.monitorName}</p>
             <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">{activity.name}</h1>
-            {activity.closed ? <p className="mt-0.5 text-sm font-semibold text-[var(--muted)]">✓ Cette séance est déjà clôturée.</p> : null}
+            <p className="mt-0.5 text-sm font-semibold text-[var(--muted)]">
+              {activity.sessionState === "CLOSED"
+                ? "✓ Cette séance est déjà clôturée."
+                : activity.sessionState === "NOT_STARTED"
+                  ? "⚪ Appel non commencé"
+                  : "🟡 Appel en cours"}
+            </p>
           </div>
         </div>
         {!activity.closed ? (
@@ -97,6 +103,7 @@ export default async function ActivityDetailPage({
                 { value: activity.morningCounters.total, label: "Enfants" },
                 { value: activity.morningCounters.arrivedCount, label: "Arrivés", tone: "success" },
                 { value: activity.morningCounters.absentCount, label: "Absents", tone: "danger" },
+                { value: activity.morningCounters.notMarkedCount, label: "À traiter", tone: "primary" },
               ]}
             />
             <DismissibleTip storageKey="kt_tip_presence_buttons">

@@ -28,12 +28,26 @@ export async function ActivityOverview({ activityId, activity, now }: { activity
         iconColor={style.color}
         iconBg={style.bg}
         title="Présence du jour"
-        headline={`${activity.morningCounters.total} enfants`}
+        headline={
+          activity.sessionState === "NOT_STARTED"
+            ? "Appel non commencé"
+            : `${activity.morningCounters.total} enfants`
+        }
         stats={
-          <>
-            <span className="text-[var(--success)]">🟢 {activity.morningCounters.arrivedCount} arrivés</span> ·{" "}
-            <span className="text-[var(--danger)]">🔴 {activity.morningCounters.absentCount} absents</span>
-          </>
+          activity.sessionState === "NOT_STARTED" ? (
+            <span className="text-[var(--muted)]">{activity.morningCounters.total} enfant{activity.morningCounters.total > 1 ? "s" : ""} inscrit{activity.morningCounters.total > 1 ? "s" : ""}</span>
+          ) : (
+            <>
+              <span className="text-[var(--success)]">🟢 {activity.morningCounters.arrivedCount} arrivés</span> ·{" "}
+              <span className="text-[var(--danger)]">🔴 {activity.morningCounters.absentCount} absents</span>
+              {activity.morningCounters.notMarkedCount > 0 ? (
+                <>
+                  {" "}
+                  · <span className="text-[var(--primary)]">⚪ {activity.morningCounters.notMarkedCount} à traiter</span>
+                </>
+              ) : null}
+            </>
+          )
         }
         cta="Voir la présence"
         tourId="presence-card"
