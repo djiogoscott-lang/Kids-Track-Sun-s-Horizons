@@ -146,7 +146,10 @@ async function main() {
     ["Danse", "moniteur1@sunshorizons.be"],
     ["Multisport", "moniteur2@sunshorizons.be"],
     ["Vélo", "moniteur3@sunshorizons.be"],
-    ["Baby Tennis", "moniteur4@sunshorizons.be"],
+    // Confirmed by the project owner (2026-08-29): djiogoscott@gmail.com is
+    // the real, intended monitor of Baby Tennis — moniteur4@sunshorizons.be
+    // is a spare seeded account with no activity, not a pending assignment.
+    ["Baby Tennis", "djiogoscott@gmail.com"],
   ];
   for (const [activityName, expectedEmail] of expectedAssignment) {
     const actual = monitorEmailOf(byName[activityName].monitor_id);
