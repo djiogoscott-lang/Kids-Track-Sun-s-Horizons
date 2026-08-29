@@ -4,25 +4,26 @@ export interface MonitorAdminRow {
   id: string;
   name: string;
   email: string | null;
+  role: "ADMIN" | "MONITOR";
   activityId: string | null;
   activityName: string | null;
   active: boolean;
 }
 
 /**
- * Unlike getMonitors() in activities-repo.ts (which only ever needs
- * currently-active monitors for assignment dropdowns), this deliberately
+ * Includes every account (ADMIN and MONITOR alike), and deliberately
  * includes revoked ones too — the admin screen needs to see and reactivate
- * them, not just the active roster.
+ * them, not just the active roster. Unlike getMonitors() in
+ * activities-repo.ts (which only ever needs currently-active monitors for
+ * assignment dropdowns).
  */
 export async function getMonitorsForAdmin(): Promise<MonitorAdminRow[]> {
   const supabase = getServiceRoleClient();
   const [membershipsResult, activitiesResult, usersResult] = await Promise.all([
     supabase
       .from("organization_memberships")
-      .select("user_id, revoked_at, profiles!organization_memberships_user_id_fkey(full_name)")
-      .eq("organization_id", ORGANIZATION_ID)
-      .eq("role", "MONITOR"),
+      .select("user_id, role, revoked_at, profiles!organization_memberships_user_id_fkey(full_name)")
+      .eq("organization_id", ORGANIZATION_ID),
     supabase.from("activities").select("id, name, monitor_id").eq("organization_id", ORGANIZATION_ID),
     supabase.auth.admin.listUsers(),
   ]);
@@ -38,8 +39,9 @@ export async function getMonitorsForAdmin(): Promise<MonitorAdminRow[]> {
     const authUser = authUsers.find((u) => u.id === m.user_id);
     return {
       id: m.user_id,
-      name: (m.profiles as unknown as { full_name: string } | null)?.full_name ?? "Moniteur",
+      name: (m.profiles as unknown as { full_name: string } | null)?.full_name ?? "Membre",
       email: authUser?.email ?? null,
+      role: m.role as "ADMIN" | "MONITOR",
       activityId: activity?.id ?? null,
       activityName: activity?.name ?? null,
       active: m.revoked_at === null,

@@ -46,13 +46,16 @@ export default async function AdminMonitorsPage() {
                       <MonitorPasswordDialog monitorId={monitor.id} />
                     </div>
                     <p className="text-xs text-[var(--muted)]">
-                      {monitor.email ?? "Email indisponible"} · Moniteur · {monitor.activityName ?? "Aucune activité assignée"}
+                      {monitor.email ?? "Email indisponible"} · {monitor.role === "ADMIN" ? "Administrateur" : "Moniteur"}
+                      {monitor.role === "MONITOR" ? ` · ${monitor.activityName ?? "Aucune activité assignée"}` : ""}
                     </p>
                     <p className="mt-0.5 text-xs font-semibold">
                       {monitor.active ? <span className="text-[var(--success)]">🟢 Actif</span> : <span className="text-[var(--danger)]">🔴 Désactivé</span>}
                     </p>
                   </div>
-                  <MonitorActiveToggle monitorId={monitor.id} monitorName={monitor.name} active={monitor.active} />
+                  {monitor.role === "MONITOR" ? (
+                    <MonitorActiveToggle monitorId={monitor.id} monitorName={monitor.name} active={monitor.active} />
+                  ) : null}
                 </div>
               ))}
             </CardContent>

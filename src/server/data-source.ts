@@ -357,6 +357,7 @@ export interface MonitorAdminRecord {
   id: string;
   name: string;
   email: string | null;
+  role: "ADMIN" | "MONITOR";
   activityId: string | null;
   activityName: string | null;
   active: boolean;
@@ -364,7 +365,7 @@ export interface MonitorAdminRecord {
 
 export async function getMonitorsForAdminList(): Promise<MonitorAdminRecord[]> {
   if (!isSupabaseConfigured) {
-    return MONITORS.map((m) => ({ id: m.id, name: m.name, email: null, activityId: null, activityName: null, active: true }));
+    return MONITORS.map((m) => ({ id: m.id, name: m.name, email: null, role: "MONITOR" as const, activityId: null, activityName: null, active: true }));
   }
   return supaMonitors.getMonitorsForAdmin();
 }
