@@ -137,16 +137,42 @@ export async function updateChild(childId: string, update: SupabaseChildUpdate):
 export class ChildHasHistoryError extends Error {}
 
 /**
- * Physical deletion, not deactivation. Deliberately relies on the database's
- * own protection rather than checking history here first: attendance.child_id
- * is declared ON DELETE RESTRICT (see the foundation migration), so Postgres
- * itself refuses this delete — atomically and without a race — for any child
- * who has ever had a single presence recorded. Error 23503 is a foreign key
- * violation; that specific code is what distinguishes "blocked by history"
- * from any other failure.
+ * Physical deletion, not deactivation. attendance.child_id is ON DELETE
+ * RESTRICT, but every child gets an empty placeholder attendance row the
+ * moment they're created (see createChild() in commands.ts) — arrived and
+ * departed both false, nothing ever actually happened. Relying on the raw
+ * FK error would block deletion of every child ever added normally, which
+ * is not "has history", it's "exists". Real history is a row where the
+ * child actually arrived or departed at least once; only those block
+ * deletion. Empty placeholder rows are deleted as part of this operation —
+ * they carry no information worth protecting.
  */
 export async function deleteChildPermanently(childId: string): Promise<void> {
   const supabase = getServiceRoleClient();
+
+  const { data: attendanceRows, error: attendanceError } = await supabase
+    .from("attendance")
+    .select("id, arrived, departed")
+    .eq("organization_id", ORGANIZATION_ID)
+    .eq("child_id", childId);
+  if (attendanceError) throw attendanceError;
+
+  const hasRealHistory = (attendanceRows ?? []).some((row) => row.arrived || row.departed);
+  if (hasRealHistory) {
+    throw new ChildHasHistoryError(
+      "Impossible de supprimer : cet enfant a un historique de présence. Utilisez plutôt Désactiver pour le retirer sans perdre l'historique.",
+    );
+  }
+
+  if (attendanceRows && attendanceRows.length > 0) {
+    const { error: cleanupError } = await supabase
+      .from("attendance")
+      .delete()
+      .eq("organization_id", ORGANIZATION_ID)
+      .eq("child_id", childId);
+    if (cleanupError) throw cleanupError;
+  }
+
   const { error } = await supabase.from("children").delete().eq("organization_id", ORGANIZATION_ID).eq("id", childId);
   if (error) {
     if (error.code === "23503") {

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import {
   assignMonitor,
+  bulkDeleteChildren,
   closeActivityDay,
   createAccount,
   createChild,
@@ -140,6 +141,24 @@ export async function deleteChildPermanentlyAction(childId: string, confirmation
   revalidatePath("/admin/children");
   revalidatePath("/activities");
   return result;
+}
+
+export type BulkDeleteActionResult =
+  | { ok: true; deletedCount: number; blockedNames: string[] }
+  | { ok: false; message: string };
+
+export async function bulkDeleteChildrenAction(childIds: string[], confirmationText: string): Promise<BulkDeleteActionResult> {
+  await requireUser("ADMIN");
+  try {
+    const result = await bulkDeleteChildren(childIds, confirmationText);
+    revalidatePath("/admin/children");
+    revalidatePath("/activities");
+    return { ok: true, deletedCount: result.deletedCount, blockedNames: result.blockedNames };
+  } catch (error) {
+    if (error instanceof PresenceCommandError) return { ok: false, message: error.message };
+    console.error("Unexpected error in bulk child deletion:", error);
+    return { ok: false, message: "Une erreur est survenue. Veuillez réessayer." };
+  }
 }
 
 export async function assignMonitorAction(activityId: string, monitorId: string): Promise<ActionResult> {

@@ -143,6 +143,40 @@ export async function deleteChildPermanently(childId: string, confirmationText: 
   await deleteChildRecordPermanently(childId);
 }
 
+export interface BulkDeleteResult {
+  deletedCount: number;
+  blockedNames: string[];
+}
+
+/**
+ * Each child is attempted independently rather than as one all-or-nothing
+ * operation: a batch of 24 children where 3 have history should delete the
+ * 21 that can be deleted and clearly report the 3 that can't, not fail the
+ * whole batch over rows that were never going to succeed anyway.
+ */
+export async function bulkDeleteChildren(childIds: string[], confirmationText: string): Promise<BulkDeleteResult> {
+  if (confirmationText.trim().toUpperCase() !== "SUPPRIMER") {
+    throw new PresenceCommandError('Tapez "SUPPRIMER" pour confirmer.');
+  }
+  let deletedCount = 0;
+  const blockedNames: string[] = [];
+  for (const childId of childIds) {
+    const child = await getChildById(childId);
+    if (!child) continue;
+    try {
+      await deleteChildRecordPermanently(childId);
+      deletedCount++;
+    } catch (error) {
+      if (error instanceof PresenceCommandError) {
+        blockedNames.push(`${child.firstName} ${child.lastName}`);
+      } else {
+        throw error;
+      }
+    }
+  }
+  return { deletedCount, blockedNames };
+}
+
 export async function sendNotification(activityId: string, message: string, createdByUserId: string, createdByName: string) {
   const activities = await getActivitiesList();
   if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");

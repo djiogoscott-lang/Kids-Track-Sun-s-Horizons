@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getActivityIdForMonitor, listActivitiesOverview } from "@/features/presence/application/queries";
 import { ActivityCard } from "@/features/presence/ui/activity-card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { requireUser } from "@/lib/auth/require-user";
 
 export default async function ActivitiesPage() {
@@ -9,6 +10,16 @@ export default async function ActivitiesPage() {
   if (user.role === "MONITOR") {
     const activityId = await getActivityIdForMonitor(user.id);
     if (activityId) redirect(`/activities/${activityId}`);
+    // A monitor with no activity must never fall through to the admin's
+    // all-activities grid — that would show them every other activity.
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <EmptyState
+          title="Votre activité n'est pas encore attribuée."
+          description="Contactez l'administrateur."
+        />
+      </div>
+    );
   }
 
   const activities = await listActivitiesOverview();
