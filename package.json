@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:rls": "node scripts/rls-suite.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "latest",
@@ -35,6 +36,7 @@
     "autoprefixer": "latest",
     "eslint": "latest",
     "eslint-config-next": "16.3.0",
+    "pg": "^8.23.0",
     "postcss": "latest",
     "tailwindcss": "latest",
     "typescript": "latest",
