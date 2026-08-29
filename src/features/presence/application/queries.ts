@@ -209,10 +209,17 @@ export interface DaycareRow {
   reason: DaycareReason;
 }
 
-/** The Garderie list is global, not per-activity: children converge here from every activity. */
-export async function getDaycareList(now = new Date()): Promise<DaycareRow[]> {
+/**
+ * For an admin, Garderie is global — children converge here from every
+ * activity. A monitor passing their own activityId only ever sees their own
+ * activity's children here, same as every other monitor-facing screen —
+ * without this filter a monitor would see every other activity's daycare
+ * children too, which is exactly the cross-activity leak the rest of the
+ * app is careful to avoid.
+ */
+export async function getDaycareList(now = new Date(), activityId?: string): Promise<DaycareRow[]> {
   const [records, allChildren, activities, dayStates] = await Promise.all([
-    getAttendanceMap(now),
+    getAttendanceMap(now, activityId),
     getChildrenList(),
     getActivitiesList(),
     getDayStatesForDate(now),
@@ -221,6 +228,7 @@ export async function getDaycareList(now = new Date()): Promise<DaycareRow[]> {
 
   for (const child of allChildren) {
     if (!child.active) continue;
+    if (activityId && child.activityId !== activityId) continue;
     const record = records.get(child.id);
     if (!record) continue;
     const activity = activities.find((a) => a.id === child.activityId);

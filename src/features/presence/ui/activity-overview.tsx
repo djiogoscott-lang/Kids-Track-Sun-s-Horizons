@@ -8,7 +8,10 @@ import { formatDateLong } from "@/lib/format";
 
 export async function ActivityOverview({ activityId, activity, now }: { activityId: string; activity: ActivityDetail; now: Date }) {
   const style = activityStyle(activityId);
-  const daycare = await getDaycareList(now);
+  // Scoped to this activity, not global — this card lives on one activity's
+  // own overview page, so its numbers must match that activity regardless
+  // of who's viewing it.
+  const daycare = await getDaycareList(now, activityId);
   const daycarePlanned = daycare.filter((c) => c.reason === "PLANNED").length;
   const daycareAfterSession = daycare.filter((c) => c.reason === "AFTER_SESSION").length;
 

@@ -1,16 +1,19 @@
 import { Home } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { getDaycareList } from "@/features/presence/application/queries";
+import { getActivityIdForMonitor, getDaycareList } from "@/features/presence/application/queries";
 import { CounterBar } from "@/features/presence/ui/counter-bar";
 import { DaycareRowItem } from "@/features/presence/ui/daycare-row";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatTime } from "@/lib/format";
 
 export default async function GarderiePage() {
-  await requireUser();
+  const user = await requireUser();
   const now = new Date();
-  const children = await getDaycareList(now);
+  // A monitor only ever sees their own activity's daycare children — only
+  // an admin needs (and gets) the cross-activity view.
+  const activityId = user.role === "MONITOR" ? (await getActivityIdForMonitor(user.id)) ?? undefined : undefined;
+  const children = await getDaycareList(now, activityId);
 
   return (
     <div className="animate-float-in space-y-6">
@@ -23,7 +26,9 @@ export default async function GarderiePage() {
         </span>
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Garderie</h1>
-          <p className="text-sm text-[var(--muted)]">Situation à {formatTime(now)}, toutes activités confondues.</p>
+          <p className="text-sm text-[var(--muted)]">
+            Situation à {formatTime(now)}{user.role === "ADMIN" ? ", toutes activités confondues." : "."}
+          </p>
         </div>
       </div>
 
