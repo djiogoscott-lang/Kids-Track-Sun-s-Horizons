@@ -50,6 +50,19 @@ export interface AttendancePatch {
   departedAt?: Date | null;
 }
 
+/**
+ * Always reads the existing row and sends a complete merged row, rather than
+ * upserting only the patched columns. PostgREST's upsert falls back to each
+ * column's table default for anything omitted from the payload — even on
+ * the update branch of an existing row — so a partial upsert of just
+ * {departed: true} was silently resetting arrived back to its default
+ * (false), which then violated the attendance_check1 constraint (a child
+ * can't be departed without having arrived) and surfaced as a generic
+ * "Une erreur est survenue" on the client despite the child clearly having
+ * already arrived. This was caught reproducing "Marquer comme parti" in
+ * Garderie against real data — the exact error was a 23514 check-constraint
+ * violation, not the departed value ever failing to be recorded.
+ */
 export async function upsertAttendance(
   childId: string,
   activityId: string,
@@ -58,17 +71,30 @@ export async function upsertAttendance(
   recordedBy: string | null,
 ): Promise<void> {
   const supabase = getServiceRoleClient();
-  const row: Record<string, unknown> = {
+  const dateKey = toDateKey(date);
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("attendance")
+    .select("arrived, arrived_at, departed, departed_at")
+    .eq("organization_id", ORGANIZATION_ID)
+    .eq("child_id", childId)
+    .eq("date", dateKey)
+    .maybeSingle();
+  if (fetchError) throw fetchError;
+
+  const row = {
     organization_id: ORGANIZATION_ID,
     child_id: childId,
     activity_id: activityId,
-    date: toDateKey(date),
+    date: dateKey,
     recorded_by: recordedBy,
+    arrived: patch.arrived !== undefined ? patch.arrived : (existing?.arrived ?? false),
+    arrived_at:
+      patch.arrivedAt !== undefined ? (patch.arrivedAt ? patch.arrivedAt.toISOString() : null) : (existing?.arrived_at ?? null),
+    departed: patch.departed !== undefined ? patch.departed : (existing?.departed ?? false),
+    departed_at:
+      patch.departedAt !== undefined ? (patch.departedAt ? patch.departedAt.toISOString() : null) : (existing?.departed_at ?? null),
   };
-  if (patch.arrived !== undefined) row.arrived = patch.arrived;
-  if (patch.arrivedAt !== undefined) row.arrived_at = patch.arrivedAt ? patch.arrivedAt.toISOString() : null;
-  if (patch.departed !== undefined) row.departed = patch.departed;
-  if (patch.departedAt !== undefined) row.departed_at = patch.departedAt ? patch.departedAt.toISOString() : null;
 
   const { error } = await supabase.from("attendance").upsert(row, { onConflict: "child_id,date" });
   if (error) throw error;
