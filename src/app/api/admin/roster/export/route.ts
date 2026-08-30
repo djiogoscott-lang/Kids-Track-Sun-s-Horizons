@@ -13,8 +13,10 @@ export async function GET(request: Request) {
   if (!weekStart) {
     return new Response("weekStart requis", { status: 400 });
   }
+  const activityId = searchParams.get("activityId");
 
-  const roster = await getRosterForWeekView(weekStart);
+  let roster = await getRosterForWeekView(weekStart);
+  if (activityId) roster = roster.filter((a) => a.activityId === activityId);
   const buffer = await buildRosterExportWorkbook(weekStart, roster);
   return new Response(new Uint8Array(buffer), {
     headers: {

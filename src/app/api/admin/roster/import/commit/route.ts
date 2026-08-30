@@ -6,21 +6,28 @@ import { ROSTER_MAX_IMPORT_ROWS } from "@/features/presence/application/roster-i
 interface CommitBody {
   rows: RosterImportRow[];
   weekStart: string;
-  createUnknownChildren: boolean;
 }
 
 function isRosterImportRow(value: unknown): value is RosterImportRow {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  return typeof v.firstName === "string" && typeof v.lastName === "string" && typeof v.activityName === "string";
+  return (
+    typeof v.row === "number" &&
+    typeof v.sheetName === "string" &&
+    typeof v.firstName === "string" &&
+    typeof v.lastName === "string" &&
+    typeof v.activityName === "string" &&
+    typeof v.garderie === "string" &&
+    typeof v.notes === "string" &&
+    (v.activityOverride === undefined || typeof v.activityOverride === "string")
+  );
 }
 
 /**
- * Re-derives everything from the raw {firstName, lastName, activityName}
- * strings via commitRosterImport -> previewRosterImport server-side — never
- * trusts a client-resolved childId/activityId, so a tampered request can at
- * worst name a row that then fails to match anything, never write to an
- * arbitrary id.
+ * Re-derives everything from the raw row data via commitRosterImport ->
+ * previewRosterImport server-side — never trusts a client-resolved
+ * childId/activityId, so a tampered request can at worst name a row that
+ * then fails to match anything, never write to an arbitrary id.
  */
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -49,7 +56,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await commitRosterImport(body.rows, body.weekStart, Boolean(body.createUnknownChildren), user.id);
+    const result = await commitRosterImport(body.rows, body.weekStart, user.id);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     console.error("Roster import commit failed, nothing was written:", error);

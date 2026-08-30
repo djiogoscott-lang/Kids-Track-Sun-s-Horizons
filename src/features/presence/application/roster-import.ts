@@ -3,18 +3,25 @@ import { ImportFileError } from "./excel-import";
 
 export const ROSTER_MAX_IMPORT_ROWS = 1000;
 
-export interface RawRosterImportRow {
-  row: number; // 1-indexed spreadsheet row, header is row 1
-  firstName: string;
-  lastName: string;
-  activityName: string;
-  /** Optional — when present, checked against the target week rather than
-   * used to route the row elsewhere (see commitRosterImport in commands.ts):
-   * a file with a "Semaine" column is more often someone re-using last
-   * week's export than someone deliberately mixing weeks in one file, so a
-   * mismatch is reported as an error instead of silently trusted. */
-  weekLabel: string;
-}
+export type RosterFieldKey = "firstName" | "lastName" | "activityName" | "daycareAuto" | "notes";
+
+export const ROSTER_FIELD_LABELS: Record<RosterFieldKey, string> = {
+  firstName: "Prénom",
+  lastName: "Nom",
+  activityName: "Activité",
+  daycareAuto: "Garderie",
+  notes: "Notes",
+};
+
+const REQUIRED_FIELDS: RosterFieldKey[] = ["firstName", "lastName", "activityName"];
+
+const COLUMN_VARIANTS: Record<RosterFieldKey, string[]> = {
+  firstName: ["prenom", "prenoms", "prenom(s)", "first name", "firstname"],
+  lastName: ["nom", "noms", "last name", "lastname", "nom de famille", "surname"],
+  activityName: ["activite", "activites", "activity"],
+  daycareAuto: ["garderie", "daycare"],
+  notes: ["notes", "note", "remarque", "remarques", "commentaire", "commentaires"],
+};
 
 function normalize(value: string): string {
   return value
@@ -32,87 +39,124 @@ function cellText(value: ExcelJS.CellValue): string {
   return String(value);
 }
 
-type FieldKey = "firstName" | "lastName" | "activityName" | "weekLabel";
-
-const COLUMN_VARIANTS: Record<FieldKey, string[]> = {
-  firstName: ["prenom", "prenoms", "prenom(s)", "first name", "firstname"],
-  lastName: ["nom", "noms", "last name", "lastname", "nom de famille", "surname"],
-  activityName: ["activite", "activites", "activity"],
-  weekLabel: ["semaine", "week", "semaine du"],
-};
-
-const REQUIRED_FIELDS: FieldKey[] = ["firstName", "lastName", "activityName"];
-const FIELD_LABELS: Record<FieldKey, string> = {
-  firstName: "Prénom",
-  lastName: "Nom",
-  activityName: "Activité",
-  weekLabel: "Semaine",
-};
-
-function matchHeaderField(headerText: string): FieldKey | null {
+function matchHeaderField(headerText: string): RosterFieldKey | null {
   const normalized = normalize(headerText);
-  for (const [field, variants] of Object.entries(COLUMN_VARIANTS) as [FieldKey, string[]][]) {
+  for (const [field, variants] of Object.entries(COLUMN_VARIANTS) as [RosterFieldKey, string[]][]) {
     if (variants.includes(normalized)) return field;
   }
   return null;
 }
 
-function resolveColumnMap(headerRow: ExcelJS.Row): Map<FieldKey, number> {
-  const map = new Map<FieldKey, number>();
-  const ambiguous: FieldKey[] = [];
-
-  headerRow.eachCell((cell, colNumber) => {
-    const field = matchHeaderField(cellText(cell.value));
-    if (!field) return;
-    if (map.has(field)) {
-      if (!ambiguous.includes(field)) ambiguous.push(field);
-      return;
-    }
-    map.set(field, colNumber);
-  });
-
-  if (ambiguous.length > 0) {
-    throw new ImportFileError(
-      `Colonne ambiguë : plusieurs colonnes correspondent à ${ambiguous.map((f) => FIELD_LABELS[f]).join(", ")}. Corrigez les en-têtes du fichier.`,
-    );
-  }
-
-  const missing = REQUIRED_FIELDS.filter((f) => !map.has(f));
-  if (missing.length > 0) {
-    throw new ImportFileError(
-      `Colonne(s) obligatoire(s) introuvable(s) : ${missing.map((f) => FIELD_LABELS[f]).join(", ")}. Colonnes attendues : Prénom, Nom, Activité (Semaine facultative).`,
-    );
-  }
-
-  return map;
+export interface DetectedHeader {
+  index: number; // 1-indexed spreadsheet column
+  text: string; // raw header text, exactly as it appears in the file
+  autoField: RosterFieldKey | null; // best-guess automatic match, or null if unrecognized
 }
 
-export function parseRosterSheetRows(sheet: ExcelJS.Worksheet): RawRosterImportRow[] {
+/** Never throws — always hands back what it saw, even an empty/garbled
+ * header row, so the caller can decide between the fast auto-detected path
+ * and asking the admin to map columns by hand ("Cette colonne correspond
+ * à…"). Blank header cells are skipped (not every column needs a name). */
+export function detectHeaders(sheet: ExcelJS.Worksheet): DetectedHeader[] {
   const headerRow = sheet.getRow(1);
-  const columnMap = resolveColumnMap(headerRow);
+  const headers: DetectedHeader[] = [];
+  headerRow.eachCell((cell, colNumber) => {
+    const text = cellText(cell.value).trim();
+    if (!text) return;
+    headers.push({ index: colNumber, text, autoField: matchHeaderField(text) });
+  });
+  return headers;
+}
 
-  const get = (row: ExcelJS.Row, field: FieldKey): string => {
-    const col = columnMap.get(field);
-    return col ? cellText(row.getCell(col).value) : "";
+export type ColumnMapping = Record<number, RosterFieldKey | "ignore">;
+
+/**
+ * A column mapping is usable as-is only when every required field maps to
+ * exactly one column — anything else (a required field missing, or two
+ * columns claiming the same field) means the admin needs to resolve it by
+ * hand rather than the app guessing wrong silently.
+ *
+ * activityName is the one exception: when every sheet actually being read
+ * has a name that itself matches a known activity (the one-tab-per-activity
+ * file shape), the column is legitimately allowed to be absent — the sheet
+ * name fills in for it per row (see parseSheetRowsWithMapping). Pass
+ * `activityNameOptional: true` only when that holds for every selected sheet.
+ */
+export function isColumnMappingComplete(headers: DetectedHeader[], mapping: ColumnMapping, activityNameOptional = false): boolean {
+  const fieldCounts = new Map<RosterFieldKey, number>();
+  for (const h of headers) {
+    const field = mapping[h.index];
+    if (!field || field === "ignore") continue;
+    fieldCounts.set(field, (fieldCounts.get(field) ?? 0) + 1);
+  }
+  return REQUIRED_FIELDS.every((f) => {
+    if (f === "activityName" && activityNameOptional) return true;
+    return fieldCounts.get(f) === 1;
+  });
+}
+
+export function autoColumnMapping(headers: DetectedHeader[]): ColumnMapping {
+  const mapping: ColumnMapping = {};
+  for (const h of headers) mapping[h.index] = h.autoField ?? "ignore";
+  return mapping;
+}
+
+export interface RawRosterImportRow {
+  row: number; // 1-indexed spreadsheet row, header is row 1
+  sheetName: string;
+  firstName: string;
+  lastName: string;
+  activityName: string;
+  garderie: string; // raw "Oui"/"Non"-shaped text, parsed downstream
+  notes: string;
+}
+
+/**
+ * Parses one sheet using an already-resolved column mapping (auto-detected
+ * or supplied by the admin after a "colonne non reconnue" correction).
+ * sheetActivityFallback covers the one-sheet-per-activity file shape (a
+ * workbook with a "Danse" tab, a "Multisport" tab, etc.): a row with no
+ * Activité column, or a blank cell in it, inherits the sheet's own name
+ * when that name happens to match a known activity.
+ */
+export function parseSheetRowsWithMapping(
+  sheet: ExcelJS.Worksheet,
+  mapping: ColumnMapping,
+  sheetActivityFallback: string | null,
+): RawRosterImportRow[] {
+  const columnFor = (field: RosterFieldKey): number | undefined => {
+    for (const [colStr, mapped] of Object.entries(mapping)) {
+      if (mapped === field) return Number(colStr);
+    }
+    return undefined;
   };
+  const cols = {
+    firstName: columnFor("firstName"),
+    lastName: columnFor("lastName"),
+    activityName: columnFor("activityName"),
+    daycareAuto: columnFor("daycareAuto"),
+    notes: columnFor("notes"),
+  };
+
+  const get = (row: ExcelJS.Row, col: number | undefined): string => (col ? cellText(row.getCell(col).value) : "");
 
   const rows: RawRosterImportRow[] = [];
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
+    const activityName = get(row, cols.activityName).trim() || sheetActivityFallback || "";
     rows.push({
       row: rowNumber,
-      firstName: get(row, "firstName"),
-      lastName: get(row, "lastName"),
-      activityName: get(row, "activityName"),
-      weekLabel: get(row, "weekLabel"),
+      sheetName: sheet.name,
+      firstName: get(row, cols.firstName),
+      lastName: get(row, cols.lastName),
+      activityName,
+      garderie: get(row, cols.daycareAuto),
+      notes: get(row, cols.notes),
     });
   });
 
-  if (rows.length > ROSTER_MAX_IMPORT_ROWS) {
-    throw new ImportFileError(`Trop de lignes (max ${ROSTER_MAX_IMPORT_ROWS}).`);
-  }
   if (rows.length === 0) {
-    throw new ImportFileError("Le fichier ne contient aucune ligne de données.");
+    throw new ImportFileError(`La feuille "${sheet.name}" ne contient aucune ligne de données.`);
   }
 
   return rows;

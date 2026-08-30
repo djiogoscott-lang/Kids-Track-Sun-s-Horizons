@@ -7,6 +7,7 @@ import { getRosterForWeekView, listChildrenForAdmin } from "@/features/presence/
 import { AddToRosterDialog } from "@/features/presence/ui/add-to-roster-dialog";
 import { DuplicateWeekButton } from "@/features/presence/ui/duplicate-week-button";
 import { ResetRosterDialog } from "@/features/presence/ui/reset-roster-dialog";
+import { RosterExportControl } from "@/features/presence/ui/roster-export-control";
 import { RosterImportDialog } from "@/features/presence/ui/roster-import-dialog";
 import { RosterParticipantRow } from "@/features/presence/ui/roster-participant-row";
 import { requireUser } from "@/lib/auth/require-user";
@@ -58,12 +59,17 @@ export default async function AdminRosterPage({ searchParams }: { searchParams: 
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <RosterImportDialog weekStart={weekStart} />
+        <RosterImportDialog
+          weekStart={weekStart}
+          weekLabel={`${formatDateLong(new Date(`${weekStart}T12:00:00`))} au ${formatDateLong(new Date(`${weekEnd}T12:00:00`))}`}
+          activities={activities.map((a) => ({ id: a.id, name: a.name }))}
+        />
+        <RosterExportControl weekStart={weekStart} activities={activities.map((a) => ({ id: a.id, name: a.name }))} />
         <a
-          href={`/api/admin/roster/export?weekStart=${weekStart}`}
+          href="/api/admin/roster/template"
           className="tap-scale flex h-11 items-center rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--primary)]"
         >
-          📤 Exporter
+          📄 Télécharger le modèle Excel
         </a>
         {totalParticipants === 0 ? <DuplicateWeekButton fromWeekStart={previousWeekStart} toWeekStart={weekStart} /> : null}
       </div>

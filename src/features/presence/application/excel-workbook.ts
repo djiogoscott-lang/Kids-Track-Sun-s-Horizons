@@ -62,26 +62,37 @@ export async function buildRosterTemplateWorkbook(): Promise<Buffer> {
     { header: "Prénom", key: "firstName", width: 18 },
     { header: "Nom", key: "lastName", width: 18 },
     { header: "Activité", key: "activity", width: 18 },
-    { header: "Semaine", key: "week", width: 14 },
+    { header: "Garderie", key: "garderie", width: 12 },
+    { header: "Notes", key: "notes", width: 30 },
   ];
   styleHeaderRow(sheet.getRow(1));
-  sheet.addRow({ firstName: "Lucas", lastName: "Martin", activity: "Danse", week: "" });
-  sheet.addRow({ firstName: "Emma", lastName: "Bernard", activity: "Danse", week: "" });
-  sheet.addRow({ firstName: "Noah", lastName: "Dupont", activity: "Multisport", week: "" });
+  sheet.addRow({ firstName: "Emma", lastName: "Bernard", activity: "Danse", garderie: "Oui", notes: "" });
+  sheet.addRow({ firstName: "Lucas", lastName: "Martin", activity: "Vélo", garderie: "Non", notes: "" });
+  sheet.addRow({ firstName: "Jade", lastName: "André", activity: "Baby Tennis", garderie: "Oui", notes: "" });
+  sheet.addRow({ firstName: "Arthur", lastName: "Blanc", activity: "Multisport", garderie: "Non", notes: "Allergie arachides" });
 
   const instructions = workbook.addWorksheet("Instructions");
   instructions.columns = [{ width: 90 }];
   const lines = [
     "COMMENT REMPLIR CE FICHIER",
     "",
-    "1 ligne = 1 participant pour la semaine en cours d'import.",
+    "1 ligne = 1 participant pour la semaine choisie au moment de l'import (la semaine se choisit dans l'application, pas dans ce fichier).",
     "",
-    "Prénom, Nom : doivent correspondre exactement à un enfant déjà connu — sinon vous pourrez choisir de créer sa fiche.",
-    "Activité : écrivez exactement l'un de : Danse, Multisport, Vélo, Baby Tennis.",
-    "Semaine : facultatif. Si rempli (AAAA-MM-JJ ou JJ/MM/AAAA), doit correspondre à la semaine importée, sinon la ligne est signalée.",
+    "L'ordre des colonnes n'a pas d'importance — seuls les noms d'en-têtes comptent.",
     "",
-    "Cet import ne modifie jamais les fiches enfants existantes ni les semaines précédentes.",
-    "Un aperçu avec les éventuelles erreurs sera affiché avant toute écriture.",
+    "Prénom : obligatoire.",
+    "Nom : obligatoire.",
+    "Activité : obligatoire — écrivez exactement l'une des activités autorisées : Danse, Multisport, Vélo, Baby Tennis.",
+    "  Si votre fichier a une feuille par activité (un onglet \"Danse\", un onglet \"Vélo\"...), vous pouvez laisser la colonne Activité vide : l'application utilisera le nom de la feuille.",
+    "Garderie : écrivez Oui ou Non. Laissé vide = Non.",
+    "Notes : facultatif (allergies, contact particulier, information utile...).",
+    "",
+    "Si un enfant n'existe pas encore dans l'application, sa fiche est créée automatiquement.",
+    "Si un enfant existe déjà, il est simplement ajouté à la liste de la semaine — jamais dupliqué.",
+    "",
+    "Avant toute écriture, un aperçu classé par activité s'affiche avec le détail de chaque ligne",
+    "(nouveau, déjà connu, déjà inscrit, doublon, erreur) — rien n'est enregistré avant confirmation.",
+    "Les semaines précédentes ne sont jamais modifiées par un nouvel import.",
   ];
   lines.forEach((line, i) => {
     const row = instructions.addRow([line]);
@@ -99,12 +110,11 @@ export async function buildRosterExportWorkbook(weekStart: string, roster: Roste
     { header: "Prénom", key: "firstName", width: 18 },
     { header: "Nom", key: "lastName", width: 18 },
     { header: "Activité", key: "activity", width: 18 },
-    { header: "Semaine", key: "week", width: 14 },
   ];
   styleHeaderRow(sheet.getRow(1));
   for (const activity of roster) {
     for (const participant of activity.participants) {
-      sheet.addRow({ firstName: participant.firstName, lastName: participant.lastName, activity: activity.activityName, week: weekStart });
+      sheet.addRow({ firstName: participant.firstName, lastName: participant.lastName, activity: activity.activityName });
     }
   }
   const buffer = await workbook.xlsx.writeBuffer();

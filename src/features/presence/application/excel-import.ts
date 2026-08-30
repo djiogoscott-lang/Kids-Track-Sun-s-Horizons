@@ -41,7 +41,7 @@ function normalize(value: string): string {
 
 /** Accepts common spellings/casing so a non-technical person filling the
  * template by hand isn't tripped up by accents or capitalization. */
-function parseYesNo(value: string, fieldLabel: string): { ok: true; value: boolean } | { ok: false; message: string } {
+export function parseYesNo(value: string, fieldLabel: string): { ok: true; value: boolean } | { ok: false; message: string } {
   const v = normalize(value);
   if (v === "" ) return { ok: true, value: false };
   if (["oui", "o", "yes", "y", "true", "1"].includes(v)) return { ok: true, value: true };
