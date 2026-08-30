@@ -10,6 +10,7 @@ import { ChildEveningRow } from "@/features/presence/ui/child-evening-row";
 import { ChildMorningRow } from "@/features/presence/ui/child-morning-row";
 import { ClosureControl } from "@/features/presence/ui/closure-control";
 import { CounterBar } from "@/features/presence/ui/counter-bar";
+import { NewSessionControl } from "@/features/presence/ui/new-session-control";
 import { requireUser } from "@/lib/auth/require-user";
 
 export default async function ActivityDetailPage({
@@ -78,21 +79,24 @@ export default async function ActivityDetailPage({
             </p>
           </div>
         </div>
-        {!activity.closed ? (
-          <ClosureControl
-            activityId={id}
-            activityName={activity.name}
-            now={now}
-            counts={{
-              arrivedCount: activity.morningCounters.arrivedCount,
-              absentCount: activity.morningCounters.absentCount,
-              notMarkedCount: activity.morningCounters.notMarkedCount,
-              leftCount: activity.eveningCounters.leftCount,
-              stillPresentCount: activity.eveningCounters.stillPresentCount,
-              garderieCount: activity.garderieCount,
-            }}
-          />
-        ) : null}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {user.role === "ADMIN" ? <NewSessionControl activityId={id} activityName={activity.name} now={now} /> : null}
+          {!activity.closed ? (
+            <ClosureControl
+              activityId={id}
+              activityName={activity.name}
+              now={now}
+              counts={{
+                arrivedCount: activity.morningCounters.arrivedCount,
+                absentCount: activity.morningCounters.absentCount,
+                notMarkedCount: activity.morningCounters.notMarkedCount,
+                leftCount: activity.eveningCounters.leftCount,
+                stillPresentCount: activity.eveningCounters.stillPresentCount,
+                garderieCount: activity.garderieCount,
+              }}
+            />
+          ) : null}
+        </div>
       </div>
 
       <ActivityTabs

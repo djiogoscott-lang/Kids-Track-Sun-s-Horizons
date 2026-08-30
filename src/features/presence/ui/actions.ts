@@ -22,7 +22,7 @@ import {
   updateMonitorPassword,
   type UpdateChildInput,
 } from "@/features/presence/application/commands";
-import { getActivityIdForMonitor, getChildForAdmin } from "@/features/presence/application/queries";
+import { getActivityDetail, getActivityIdForMonitor, getChildForAdmin } from "@/features/presence/application/queries";
 import { PresenceCommandError } from "@/features/presence/application/errors";
 import { requireUser } from "@/lib/auth/require-user";
 import { publishActivityUpdate } from "@/server/demo/notifications-store";
@@ -119,6 +119,30 @@ export async function addChildToDaycareAction(childId: string): Promise<ActionRe
   });
   revalidateActivityViews(child.activityId);
   return result;
+}
+
+export type NewSessionCheckResult =
+  | { ok: true; alreadyExists: true }
+  | { ok: true; alreadyExists: false; total: number; notMarkedCount: number }
+  | { ok: false; message: string };
+
+/**
+ * Purely a read + a confirmation message — there is nothing to create. A day
+ * with zero attendance rows already IS "0 présent / 0 absent / tous non
+ * traité" (see morningStatus in domain/types.ts), so a brand new calendar
+ * date starts clean automatically with no write at all. This only exists to
+ * (a) give the admin an explicit, visible confirmation of that fact and
+ * (b) refuse to imply a fresh session when today already has real data —
+ * re-fetched fresh here rather than trusting whatever the page last
+ * rendered, since a monitor could have started the roll call in the
+ * meantime.
+ */
+export async function checkNewSessionAction(activityId: string): Promise<NewSessionCheckResult> {
+  await requireUser("ADMIN");
+  const detail = await getActivityDetail(activityId);
+  if (!detail) return { ok: false, message: "Activité introuvable." };
+  if (detail.sessionState !== "NOT_STARTED") return { ok: true, alreadyExists: true };
+  return { ok: true, alreadyExists: false, total: detail.morningCounters.total, notMarkedCount: detail.morningCounters.notMarkedCount };
 }
 
 export async function closeActivityDayAction(activityId: string): Promise<ActionResult> {
