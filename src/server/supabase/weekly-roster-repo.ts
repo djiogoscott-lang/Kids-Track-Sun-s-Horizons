@@ -58,24 +58,48 @@ function assertScope(field: string, value: string | null | undefined): asserts v
   }
 }
 
-/** Every week that has ever received a real write (add/import/duplicate/
- * backfill with at least one row) is recorded here implicitly via the audit
- * log — used to tell "no roster was ever created for this week" (expected,
+/**
+ * Compares the most recent "populated" event (add/import/duplicate/
+ * backfill with at least one row) against the most recent "cleared"
+ * event (a per-activity RESET, or the org-wide operational reset — both
+ * log a RESET row here) for this week. Only a populate strictly more
+ * recent than any reset counts as "still activated" — this is what tells
+ * "no roster was ever created for this week" and "this week was
+ * populated but has since been legitimately cleared" (both expected,
  * safe to fall back to legacy children.activityId) apart from "a roster
- * existed and is now empty" (anomalous, must not be silently masked). */
+ * existed and is now empty with no clearing event to explain it"
+ * (anomalous, must not be silently masked). Without this comparison, any
+ * week ever populated would be flagged anomalous forever after a
+ * legitimate reset, since the old populate row never goes away.
+ */
 export async function wasWeekEverActivated(weekStart: string): Promise<boolean> {
   const supabase = getServiceRoleClient();
-  const { data, error } = await supabase
-    .from("weekly_roster_audit_log")
-    .select("id")
-    .eq("organization_id", ORGANIZATION_ID)
-    .eq("week_start", weekStart)
-    .in("action", ["ADD", "IMPORT", "DUPLICATE", "BACKFILL"])
-    .gt("rows_affected", 0)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data !== null;
+  const [populate, reset] = await Promise.all([
+    supabase
+      .from("weekly_roster_audit_log")
+      .select("created_at")
+      .eq("organization_id", ORGANIZATION_ID)
+      .eq("week_start", weekStart)
+      .in("action", ["ADD", "IMPORT", "DUPLICATE", "BACKFILL"])
+      .gt("rows_affected", 0)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("weekly_roster_audit_log")
+      .select("created_at")
+      .eq("organization_id", ORGANIZATION_ID)
+      .eq("week_start", weekStart)
+      .eq("action", "RESET")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (populate.error) throw populate.error;
+  if (reset.error) throw reset.error;
+  if (!populate.data) return false;
+  if (!reset.data) return true;
+  return new Date(populate.data.created_at) > new Date(reset.data.created_at);
 }
 
 export interface RosterWeekStatus {
