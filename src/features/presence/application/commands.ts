@@ -25,7 +25,7 @@ import type { PresenceRecord } from "@/features/presence/domain/types";
 import { PresenceCommandError } from "./errors";
 
 function emptyRecord(childId: string, activityId: string): PresenceRecord {
-  return { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null };
+  return { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null, daycareManual: false };
 }
 
 /** A child with no attendance row yet is not an error — it's the normal
@@ -60,6 +60,34 @@ export async function markLeft(activityId: string, childId: string, recordedBy: 
 export async function markStillPresent(activityId: string, childId: string, recordedBy: string, now = new Date()) {
   await requireRecord(childId, activityId, now);
   await setAttendance(childId, activityId, now, { departed: false, departedAt: null }, recordedBy);
+}
+
+/**
+ * Manual Garderie addition ("+ Ajouter un enfant"): a same-day event on the
+ * child's own attendance row, never a change to their permanent daycareAuto
+ * registration or their activity. A child not yet marked arrived today is
+ * arrived automatically first — Garderie presence in this domain requires
+ * `arrived: true` (see daycareReason), so there is no other coherent state
+ * to put them in without also inventing a "present in daycare but absent
+ * from their activity" case the rest of the app has no concept of.
+ */
+export async function addChildToDaycare(childId: string, recordedBy: string, now = new Date()) {
+  const child = await getChildById(childId);
+  if (!child || !child.active) throw new PresenceCommandError("Enfant introuvable ou inactif.");
+
+  const records = await getAttendanceMap(now, child.activityId);
+  const record = records.get(childId) ?? emptyRecord(childId, child.activityId);
+  if (record.left) {
+    throw new PresenceCommandError("Cet enfant est déjà parti aujourd'hui et ne peut pas être ajouté à la garderie.");
+  }
+
+  if (!record.arrived) {
+    await setAttendance(childId, child.activityId, now, { arrived: true, arrivedAt: now, daycareManual: true }, recordedBy);
+  } else {
+    await setAttendance(childId, child.activityId, now, { daycareManual: true }, recordedBy);
+  }
+
+  return { activityId: child.activityId };
 }
 
 export async function assignMonitor(activityId: string, monitorId: string) {

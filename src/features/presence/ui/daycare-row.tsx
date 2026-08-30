@@ -3,10 +3,12 @@
 import { useState, useTransition } from "react";
 import { markGoneFromDaycareAction } from "@/features/presence/ui/actions";
 import type { DaycareRow } from "@/features/presence/application/queries";
+import { formatTime } from "@/lib/format";
 
 const REASON_LABEL: Record<DaycareRow["reason"], string> = {
   PLANNED: "Garderie prévue",
   AFTER_SESSION: "Garderie après séance",
+  MANUAL: "Ajout manuel",
 };
 
 export function DaycareRowItem({ child }: { child: DaycareRow }) {
@@ -31,7 +33,9 @@ export function DaycareRowItem({ child }: { child: DaycareRow }) {
           </p>
           <p className="text-xs text-[var(--muted)]">
             {child.activityName} · {REASON_LABEL[child.reason]}
+            {child.arrivedAt ? ` · arrivé à ${formatTime(child.arrivedAt)}` : ""}
           </p>
+          <p className="mt-0.5 text-xs font-semibold text-[var(--brand-blue)]">🏠 En garderie</p>
         </div>
       </div>
       <button

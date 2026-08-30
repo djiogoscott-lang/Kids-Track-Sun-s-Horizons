@@ -14,7 +14,10 @@ interface AttendanceRow {
   arrived_at: string | null;
   departed: boolean;
   departed_at: string | null;
+  daycare_manual: boolean;
 }
+
+const ATTENDANCE_COLUMNS = "child_id, activity_id, arrived, arrived_at, departed, departed_at, daycare_manual";
 
 function mapRow(row: AttendanceRow): PresenceRecord {
   return {
@@ -24,6 +27,7 @@ function mapRow(row: AttendanceRow): PresenceRecord {
     arrivedAt: row.arrived_at ? new Date(row.arrived_at) : null,
     left: row.departed,
     leftAt: row.departed_at ? new Date(row.departed_at) : null,
+    daycareManual: row.daycare_manual,
   };
 }
 
@@ -34,7 +38,7 @@ export async function getAttendanceMapForDate(date: Date, activityId?: string): 
   const supabase = getServiceRoleClient();
   let query = supabase
     .from("attendance")
-    .select("child_id, activity_id, arrived, arrived_at, departed, departed_at")
+    .select(ATTENDANCE_COLUMNS)
     .eq("organization_id", ORGANIZATION_ID)
     .eq("date", toDateKey(date));
   if (activityId) query = query.eq("activity_id", activityId);
@@ -48,6 +52,7 @@ export interface AttendancePatch {
   arrivedAt?: Date | null;
   departed?: boolean;
   departedAt?: Date | null;
+  daycareManual?: boolean;
 }
 
 /**
@@ -75,7 +80,7 @@ export async function upsertAttendance(
 
   const { data: existing, error: fetchError } = await supabase
     .from("attendance")
-    .select("arrived, arrived_at, departed, departed_at")
+    .select("arrived, arrived_at, departed, departed_at, daycare_manual")
     .eq("organization_id", ORGANIZATION_ID)
     .eq("child_id", childId)
     .eq("date", dateKey)
@@ -94,6 +99,7 @@ export async function upsertAttendance(
     departed: patch.departed !== undefined ? patch.departed : (existing?.departed ?? false),
     departed_at:
       patch.departedAt !== undefined ? (patch.departedAt ? patch.departedAt.toISOString() : null) : (existing?.departed_at ?? null),
+    daycare_manual: patch.daycareManual !== undefined ? patch.daycareManual : (existing?.daycare_manual ?? false),
   };
 
   const { error } = await supabase.from("attendance").upsert(row, { onConflict: "child_id,date" });
@@ -110,7 +116,7 @@ export async function getAttendanceForDateRange(
   const supabase = getServiceRoleClient();
   let query = supabase
     .from("attendance")
-    .select("child_id, activity_id, date, arrived, arrived_at, departed, departed_at")
+    .select("child_id, activity_id, date, arrived, arrived_at, departed, departed_at, daycare_manual")
     .eq("organization_id", ORGANIZATION_ID)
     .gte("date", toDateKey(startDate))
     .lte("date", toDateKey(endDate))
@@ -125,7 +131,7 @@ export async function getAttendanceForChild(childId: string, limit = 60): Promis
   const supabase = getServiceRoleClient();
   const { data, error } = await supabase
     .from("attendance")
-    .select("child_id, activity_id, date, arrived, arrived_at, departed, departed_at")
+    .select("child_id, activity_id, date, arrived, arrived_at, departed, departed_at, daycare_manual")
     .eq("organization_id", ORGANIZATION_ID)
     .eq("child_id", childId)
     .order("date", { ascending: false })

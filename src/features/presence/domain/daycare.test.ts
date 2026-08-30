@@ -3,7 +3,7 @@ import { daycareReason, eveningStatus, isPastDaycareCutoff } from "./daycare";
 import type { PresenceRecord } from "./types";
 
 function record(overrides: Partial<PresenceRecord>): PresenceRecord {
-  return { childId: "c1", activityId: "a1", arrived: true, arrivedAt: new Date(), left: false, leftAt: null, ...overrides };
+  return { childId: "c1", activityId: "a1", arrived: true, arrivedAt: new Date(), left: false, leftAt: null, daycareManual: false, ...overrides };
 }
 
 // Europe/Brussels is UTC+1 (winter) or UTC+2 (summer); using explicit offsets keeps this test DST-proof.
@@ -68,5 +68,17 @@ describe("daycareReason", () => {
 
   it("is AFTER_SESSION for a non-daycare child once past the cutoff, even if not explicitly closed", () => {
     expect(daycareReason(record({}), false, false, after)).toBe("AFTER_SESSION");
+  });
+
+  it("is MANUAL for a manually-added child before the cutoff and before closure", () => {
+    expect(daycareReason(record({ daycareManual: true }), false, false, before)).toBe("MANUAL");
+  });
+
+  it("is PLANNED, not MANUAL, when both daycareAuto and daycareManual are set", () => {
+    expect(daycareReason(record({ daycareManual: true }), true, false, before)).toBe("PLANNED");
+  });
+
+  it("is null for a manually-added child who has since left", () => {
+    expect(daycareReason(record({ daycareManual: true, left: true }), false, false, after)).toBeNull();
   });
 });

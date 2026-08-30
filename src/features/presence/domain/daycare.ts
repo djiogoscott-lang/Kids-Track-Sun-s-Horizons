@@ -30,11 +30,14 @@ export function eveningStatus(record: PresenceRecord, activityClosed: boolean, n
   return activityClosed || isPastDaycareCutoff(now) ? "DAYCARE" : "STILL_PRESENT";
 }
 
-export type DaycareReason = "PLANNED" | "AFTER_SESSION";
+export type DaycareReason = "PLANNED" | "AFTER_SESSION" | "MANUAL";
 
 /**
  * PLANNED covers a child registered for daycare from the morning — they
  * appear as soon as they arrive, never waiting on the clock or a closure.
+ * MANUAL covers a same-day, one-off addition (the Garderie "+ Ajouter un
+ * enfant" flow) — checked before the cutoff so it applies immediately,
+ * not only once the day would already have pushed them there anyway.
  * AFTER_SESSION covers anyone still on-site once their activity's day ends,
  * whether that end came from an explicit closure or the automatic cutoff.
  */
@@ -46,5 +49,6 @@ export function daycareReason(
 ): DaycareReason | null {
   if (!record.arrived || record.left) return null;
   if (daycareAuto) return "PLANNED";
+  if (record.daycareManual) return "MANUAL";
   return activityClosed || isPastDaycareCutoff(now) ? "AFTER_SESSION" : null;
 }

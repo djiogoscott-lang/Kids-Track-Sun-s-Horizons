@@ -17,6 +17,7 @@
  * app can keep treating activity.monitorId as "whoever can actually act as
  * this activity's monitor right now" without knowing about any of this.
  */
+import { cache } from "react";
 import { isSupabaseAuthEnabled, isSupabaseConfigured } from "@/lib/env";
 import type { PresenceRecord } from "@/features/presence/domain/types";
 import { ACTIVITIES, INITIAL_ACTIVITY_MONITORS, MONITORS } from "@/server/demo/data";
@@ -59,7 +60,15 @@ export interface ChildRecord {
   createdAt: Date;
 }
 
-export async function getActivitiesList(): Promise<ActivityRecord[]> {
+/**
+ * Wrapped in React's cache(): within a single request (a page render or one
+ * Server Action call), several independent code paths ask for the same
+ * activities roster — e.g. every getActivityDetail() call on /admin/presences
+ * (one per activity) used to re-fetch this table from scratch each time.
+ * cache() deduplicates by request, never across requests, so this cannot
+ * serve stale data between one user's actions and the next.
+ */
+export const getActivitiesList = cache(async (): Promise<ActivityRecord[]> => {
   if (!isSupabaseConfigured) {
     const assignments = getActivityAssignments();
     return ACTIVITIES.map((a) => ({ id: a.id, name: a.name, monitorId: assignments.get(a.id) ?? null }));
@@ -73,12 +82,12 @@ export async function getActivitiesList(): Promise<ActivityRecord[]> {
     const demoActivityId = ACTIVITIES.find((d) => d.name === a.name)?.id;
     return { ...a, monitorId: (demoActivityId && demoAssignments.get(demoActivityId)) ?? null };
   });
-}
+});
 
-export async function getMonitorsList(): Promise<MonitorRecord[]> {
+export const getMonitorsList = cache(async (): Promise<MonitorRecord[]> => {
   if (isSupabaseAuthEnabled) return supaActivities.getMonitors();
   return MONITORS.map((m) => ({ id: m.id, name: m.name }));
-}
+});
 
 export async function setMonitorForActivity(activityId: string, monitorId: string): Promise<void> {
   if (isSupabaseAuthEnabled) return supaActivities.setActivityMonitor(activityId, monitorId);
@@ -120,10 +129,10 @@ function demoChildToRecord(child: { id: string; firstName: string; lastName: str
   return { ...child, isDemo: false, createdAt: new Date(0) };
 }
 
-export async function getChildrenList(): Promise<ChildRecord[]> {
+export const getChildrenList = cache(async (): Promise<ChildRecord[]> => {
   if (isSupabaseConfigured) return supaChildren.getChildren();
   return demoChildren.getChildren().map(demoChildToRecord);
-}
+});
 
 export async function getChildById(childId: string): Promise<ChildRecord | undefined> {
   if (isSupabaseConfigured) return supaChildren.getChild(childId);
@@ -191,6 +200,7 @@ export interface AttendancePatch {
   arrivedAt?: Date | null;
   departed?: boolean;
   departedAt?: Date | null;
+  daycareManual?: boolean;
 }
 
 export async function getAttendanceMap(date: Date, activityId?: string): Promise<Map<string, PresenceRecord>> {
@@ -211,7 +221,7 @@ export async function setAttendance(
 ): Promise<void> {
   if (!isSupabaseConfigured) {
     const records = await getDemoPresenceRecords();
-    const existing = records.get(childId) ?? { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null };
+    const existing = records.get(childId) ?? { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null, daycareManual: false };
     records.set(childId, {
       ...existing,
       activityId,
@@ -219,6 +229,7 @@ export async function setAttendance(
       arrivedAt: patch.arrivedAt !== undefined ? patch.arrivedAt : existing.arrivedAt,
       left: patch.departed ?? existing.left,
       leftAt: patch.departedAt !== undefined ? patch.departedAt : existing.leftAt,
+      daycareManual: patch.daycareManual ?? existing.daycareManual,
     });
     return;
   }
@@ -363,12 +374,12 @@ export interface MonitorAdminRecord {
   active: boolean;
 }
 
-export async function getMonitorsForAdminList(): Promise<MonitorAdminRecord[]> {
+export const getMonitorsForAdminList = cache(async (): Promise<MonitorAdminRecord[]> => {
   if (!isSupabaseConfigured) {
     return MONITORS.map((m) => ({ id: m.id, name: m.name, email: null, role: "MONITOR" as const, activityId: null, activityName: null, active: true }));
   }
   return supaMonitors.getMonitorsForAdmin();
-}
+});
 
 export async function setMonitorActiveRecord(monitorId: string, active: boolean, actingAdminId: string): Promise<void> {
   if (!isSupabaseConfigured) {

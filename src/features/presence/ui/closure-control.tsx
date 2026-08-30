@@ -8,7 +8,9 @@ import { formatDateLong } from "@/lib/format";
 export interface ClosureSummaryCounts {
   arrivedCount: number;
   absentCount: number;
+  notMarkedCount: number;
   leftCount: number;
+  stillPresentCount: number;
   garderieCount: number;
 }
 
@@ -85,8 +87,12 @@ export function ClosureControl({
                 <p className="text-xs font-semibold text-[var(--brand-blue)]">🔵 Partis</p>
               </div>
               <div className="rounded-2xl bg-[var(--warning-bg)] px-4 py-3">
+                <p className="text-2xl font-extrabold text-[var(--brand-gold)]">{counts.stillPresentCount}</p>
+                <p className="text-xs font-semibold text-[var(--brand-gold)]">🟠 Encore présents</p>
+              </div>
+              <div className="rounded-2xl bg-[var(--warning-bg)] px-4 py-3">
                 <p className="text-2xl font-extrabold text-[var(--brand-gold)]">{counts.garderieCount}</p>
-                <p className="text-xs font-semibold text-[var(--brand-gold)]">🟠 Garderie</p>
+                <p className="text-xs font-semibold text-[var(--brand-gold)]">🏠 Garderie</p>
               </div>
             </div>
 
@@ -94,6 +100,11 @@ export function ClosureControl({
               Vérifiez la liste avant de clôturer. Les enfants encore présents seront automatiquement transférés vers la garderie.
               Cette action ne peut pas être annulée.
             </p>
+            {counts.notMarkedCount > 0 ? (
+              <p className="mt-2 rounded-xl bg-[var(--warning-bg)] px-3 py-2 text-sm font-semibold text-[#8a5a12]">
+                ⚪ {counts.notMarkedCount} enfant{counts.notMarkedCount > 1 ? "s" : ""} non traité{counts.notMarkedCount > 1 ? "s" : ""} sera{counts.notMarkedCount > 1 ? "ont" : ""} automatiquement marqué{counts.notMarkedCount > 1 ? "s" : ""} absent{counts.notMarkedCount > 1 ? "s" : ""} à la clôture.
+              </p>
+            ) : null}
 
             {error ? (
               <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
@@ -138,7 +149,10 @@ export function ClosureControl({
                 🔵 Partis <span className="font-bold text-[var(--foreground)]">{counts.leftCount}</span>
               </p>
               <p className="text-sm text-[var(--muted)]">
-                🟠 Garderie <span className="font-bold text-[var(--foreground)]">{counts.garderieCount}</span>
+                🟠 Encore présents <span className="font-bold text-[var(--foreground)]">{counts.stillPresentCount}</span>
+              </p>
+              <p className="text-sm text-[var(--muted)]">
+                🏠 Garderie <span className="font-bold text-[var(--foreground)]">{counts.garderieCount}</span>
               </p>
             </div>
             <button type="button" onClick={close} className="tap-scale mt-5 h-14 w-full rounded-2xl bg-[var(--foreground)] text-base font-bold text-white">

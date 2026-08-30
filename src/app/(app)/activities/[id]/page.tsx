@@ -86,7 +86,9 @@ export default async function ActivityDetailPage({
             counts={{
               arrivedCount: activity.morningCounters.arrivedCount,
               absentCount: activity.morningCounters.absentCount,
+              notMarkedCount: activity.morningCounters.notMarkedCount,
               leftCount: activity.eveningCounters.leftCount,
+              stillPresentCount: activity.eveningCounters.stillPresentCount,
               garderieCount: activity.garderieCount,
             }}
           />

@@ -103,7 +103,7 @@ export async function getWeekSummary(startDate: Date, activityId?: string): Prom
     if (row.left) bucket.leftCount += 1;
 
     const closed = closedByKey.get(`${row.activityId}_${row.date}`) ?? false;
-    const record: PresenceRecord = { childId: row.childId, activityId: row.activityId, arrived: row.arrived, arrivedAt: row.arrivedAt, left: row.left, leftAt: row.leftAt };
+    const record: PresenceRecord = { childId: row.childId, activityId: row.activityId, arrived: row.arrived, arrivedAt: row.arrivedAt, left: row.left, leftAt: row.leftAt, daycareManual: row.daycareManual };
     if (daycareReason(record, child.daycareAuto, closed, new Date(`${row.date}T23:59:59`))) {
       bucket.garderieCount += 1;
     }
@@ -144,7 +144,7 @@ export async function getChildHistory(childId: string, limit = 60): Promise<Chil
   const closedByKey = new Map(dayStateRows.map((d) => [`${d.activityId}_${d.date}`, d.closed]));
 
   return rows.map((row) => {
-    const record: PresenceRecord = { childId: row.childId, activityId: row.activityId, arrived: row.arrived, arrivedAt: row.arrivedAt, left: row.left, leftAt: row.leftAt };
+    const record: PresenceRecord = { childId: row.childId, activityId: row.activityId, arrived: row.arrived, arrivedAt: row.arrivedAt, left: row.left, leftAt: row.leftAt, daycareManual: row.daycareManual };
     const closed = closedByKey.get(`${row.activityId}_${row.date}`) ?? false;
     const morning = morningStatus(record);
     const status = morning === "ABSENT" ? "ABSENT" : eveningStatus(record, closed, new Date(`${row.date}T23:59:59`));

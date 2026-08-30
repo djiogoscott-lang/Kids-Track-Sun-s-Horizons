@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  addChildToDaycare,
   assignMonitor,
   bulkDeleteChildren,
   closeActivityDay,
@@ -21,7 +22,7 @@ import {
   updateMonitorPassword,
   type UpdateChildInput,
 } from "@/features/presence/application/commands";
-import { getActivityIdForMonitor } from "@/features/presence/application/queries";
+import { getActivityIdForMonitor, getChildForAdmin } from "@/features/presence/application/queries";
 import { PresenceCommandError } from "@/features/presence/application/errors";
 import { requireUser } from "@/lib/auth/require-user";
 import { publishActivityUpdate } from "@/server/demo/notifications-store";
@@ -100,6 +101,23 @@ export async function markGoneFromDaycareAction(activityId: string, childId: str
   const user = await requireUser();
   const result = await toResult(() => markLeft(activityId, childId, user.id));
   revalidateActivityViews(activityId);
+  return result;
+}
+
+/**
+ * The client only ever sends a childId, never an activityId — the child's
+ * real activity is looked up here and is what assertActivityAccess checks a
+ * monitor against, so a monitor can never smuggle in another activity's
+ * child by any client-side means.
+ */
+export async function addChildToDaycareAction(childId: string): Promise<ActionResult> {
+  const child = await getChildForAdmin(childId);
+  if (!child) return { ok: false, message: "Enfant introuvable." };
+  const result = await toResult(async () => {
+    const user = await assertActivityAccess(child.activityId);
+    await addChildToDaycare(childId, user.id);
+  });
+  revalidateActivityViews(child.activityId);
   return result;
 }
 

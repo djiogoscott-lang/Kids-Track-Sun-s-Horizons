@@ -27,7 +27,7 @@ async function buildInitialRecords(now: Date): Promise<Map<string, PresenceRecor
   if (isSupabaseConfigured) {
     const children = await getSupabaseChildren();
     for (const child of children) {
-      records.set(child.id, { childId: child.id, activityId: child.activityId, arrived: false, arrivedAt: null, left: false, leftAt: null });
+      records.set(child.id, { childId: child.id, activityId: child.activityId, arrived: false, arrivedAt: null, left: false, leftAt: null, daycareManual: false });
     }
     return records;
   }
@@ -50,6 +50,7 @@ async function buildInitialRecords(now: Date): Promise<Map<string, PresenceRecor
         arrivedAt,
         left,
         leftAt,
+        daycareManual: false,
       });
     });
   }

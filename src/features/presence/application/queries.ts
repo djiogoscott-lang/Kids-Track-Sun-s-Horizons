@@ -18,7 +18,7 @@ import { morningStatus, type PresenceRecord } from "@/features/presence/domain/t
 import type { EveningStatus, MorningStatus } from "@/features/presence/domain/types";
 
 function emptyRecord(childId: string, activityId: string): PresenceRecord {
-  return { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null };
+  return { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null, daycareManual: false };
 }
 
 /**
@@ -226,6 +226,7 @@ export interface DaycareRow {
   activityId: string;
   activityName: string;
   reason: DaycareReason;
+  arrivedAt: Date | null;
 }
 
 /**
@@ -263,11 +264,42 @@ export async function getDaycareList(now = new Date(), activityId?: string): Pro
         activityId: activity.id,
         activityName: activity.name,
         reason,
+        arrivedAt: record.arrivedAt,
       });
     }
   }
 
   return sortByName(rows);
+}
+
+export interface ChildPickerRow {
+  id: string;
+  firstName: string;
+  lastName: string;
+  activityId: string;
+  activityName: string;
+}
+
+/**
+ * Backs the Garderie "+ Ajouter un enfant" search: an admin can pick from
+ * every active child, a monitor only from their own activity's — same scope
+ * getDaycareList itself already enforces, so the picker never even shows a
+ * child the add action would go on to reject server-side anyway.
+ */
+export async function listChildrenForDaycarePicker(activityId?: string): Promise<ChildPickerRow[]> {
+  const [allChildren, activities] = await Promise.all([getChildrenList(), getActivitiesList()]);
+  const activityById = new Map(activities.map((a) => [a.id, a.name]));
+  return sortByName(
+    allChildren
+      .filter((c) => c.active && (!activityId || c.activityId === activityId))
+      .map((c) => ({
+        id: c.id,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        activityId: c.activityId,
+        activityName: activityById.get(c.activityId) ?? "Activité",
+      })),
+  );
 }
 
 export async function getNotificationsForMonitor(activityId: string): Promise<NotificationRecord[]> {

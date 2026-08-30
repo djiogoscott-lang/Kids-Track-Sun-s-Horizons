@@ -1,7 +1,10 @@
 /**
- * A child's day has exactly two independent facts: did they arrive, and
- * did they leave. Everything shown on screen is derived from these two
- * booleans plus the current time — there is no third stored status.
+ * A child's day is built from independent stored facts, never a derived
+ * "status" column: did they arrive, did they leave, and — separately —
+ * were they placed in daycare manually today. Morning/evening/daycare
+ * screens all derive their display from these plus the current time.
+ * daycareManual is a same-day event, not a permanent registration — it
+ * never touches children.daycareAuto or the child's activity.
  */
 export interface PresenceRecord {
   childId: string;
@@ -10,6 +13,7 @@ export interface PresenceRecord {
   arrivedAt: Date | null;
   left: boolean;
   leftAt: Date | null;
+  daycareManual: boolean;
 }
 
 /**
