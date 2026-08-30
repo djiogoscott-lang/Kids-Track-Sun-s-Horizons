@@ -3,21 +3,27 @@ import { ImportFileError } from "./excel-import";
 
 export const ROSTER_MAX_IMPORT_ROWS = 1000;
 
-export type RosterFieldKey = "firstName" | "lastName" | "activityName" | "daycareAuto" | "notes";
+export type RosterFieldKey = "firstName" | "lastName" | "fullName" | "activityName" | "daycareAuto" | "notes";
 
 export const ROSTER_FIELD_LABELS: Record<RosterFieldKey, string> = {
   firstName: "Prénom",
   lastName: "Nom",
+  fullName: "Nom complet",
   activityName: "Activité",
   daycareAuto: "Garderie",
   notes: "Notes",
 };
 
+// firstName+lastName is the default expectation, but a file with a single
+// "Nom complet" column is also accepted — see isColumnMappingComplete, which
+// treats fullName as an alternative to the firstName/lastName pair rather
+// than a third required field.
 const REQUIRED_FIELDS: RosterFieldKey[] = ["firstName", "lastName", "activityName"];
 
 const COLUMN_VARIANTS: Record<RosterFieldKey, string[]> = {
   firstName: ["prenom", "prenoms", "prenom(s)", "first name", "firstname"],
   lastName: ["nom", "noms", "last name", "lastname", "nom de famille", "surname"],
+  fullName: ["nom complet", "nom et prenom", "prenom et nom", "prenom nom", "nom prenom", "full name", "fullname"],
   activityName: ["activite", "activites", "activity"],
   daycareAuto: ["garderie", "daycare"],
   notes: ["notes", "note", "remarque", "remarques", "commentaire", "commentaires"],
@@ -89,8 +95,12 @@ export function isColumnMappingComplete(headers: DetectedHeader[], mapping: Colu
     if (!field || field === "ignore") continue;
     fieldCounts.set(field, (fieldCounts.get(field) ?? 0) + 1);
   }
+  const hasSeparateNames = fieldCounts.get("firstName") === 1 && fieldCounts.get("lastName") === 1;
+  const hasFullName = fieldCounts.get("fullName") === 1;
+  if (!hasSeparateNames && !hasFullName) return false;
   return REQUIRED_FIELDS.every((f) => {
     if (f === "activityName" && activityNameOptional) return true;
+    if (f === "firstName" || f === "lastName") return true; // covered by the hasSeparateNames/hasFullName check above
     return fieldCounts.get(f) === 1;
   });
 }
@@ -106,6 +116,10 @@ export interface RawRosterImportRow {
   sheetName: string;
   firstName: string;
   lastName: string;
+  /** Raw text of a single "Nom complet" column, only populated when the file
+   * has no separate firstName/lastName columns — used to offer an AI-assisted
+   * split suggestion in the preview UI, never auto-applied. */
+  fullName: string;
   activityName: string;
   garderie: string; // raw "Oui"/"Non"-shaped text, parsed downstream
   notes: string;
@@ -133,6 +147,7 @@ export function parseSheetRowsWithMapping(
   const cols = {
     firstName: columnFor("firstName"),
     lastName: columnFor("lastName"),
+    fullName: columnFor("fullName"),
     activityName: columnFor("activityName"),
     daycareAuto: columnFor("daycareAuto"),
     notes: columnFor("notes"),
@@ -149,6 +164,7 @@ export function parseSheetRowsWithMapping(
       sheetName: sheet.name,
       firstName: get(row, cols.firstName),
       lastName: get(row, cols.lastName),
+      fullName: get(row, cols.fullName),
       activityName,
       garderie: get(row, cols.daycareAuto),
       notes: get(row, cols.notes),

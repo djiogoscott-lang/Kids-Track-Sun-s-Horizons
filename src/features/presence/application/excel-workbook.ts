@@ -82,6 +82,7 @@ export async function buildRosterTemplateWorkbook(): Promise<Buffer> {
     "",
     "Prénom : obligatoire.",
     "Nom : obligatoire.",
+    "  (Vous pouvez aussi utiliser une seule colonne \"Nom complet\" à la place de Prénom+Nom séparés.)",
     "Activité : obligatoire — écrivez exactement l'une des activités autorisées : Danse, Multisport, Vélo, Baby Tennis.",
     "  Si votre fichier a une feuille par activité (un onglet \"Danse\", un onglet \"Vélo\"...), vous pouvez laisser la colonne Activité vide : l'application utilisera le nom de la feuille.",
     "Garderie : écrivez Oui ou Non. Laissé vide = Non.",
@@ -92,6 +93,8 @@ export async function buildRosterTemplateWorkbook(): Promise<Buffer> {
     "",
     "Avant toute écriture, un aperçu classé par activité s'affiche avec le détail de chaque ligne",
     "(nouveau, déjà connu, déjà inscrit, doublon, erreur) — rien n'est enregistré avant confirmation.",
+    "Si une activité ou un nom complet n'est pas reconnu, une suggestion automatique peut apparaître",
+    "dans l'aperçu — elle n'est jamais appliquée sans que vous cliquiez pour la confirmer.",
     "Les semaines précédentes ne sont jamais modifiées par un nouvel import.",
   ];
   lines.forEach((line, i) => {

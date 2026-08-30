@@ -53,6 +53,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Corrections d'activité invalides." }, { status: 400 });
     }
   }
+  // Admin-accepted corrections for a "Nom complet" row split into
+  // firstName/lastName — same contract as activityOverrides: only ever
+  // applied when the admin explicitly accepted a suggestion (AI-assisted or
+  // typed by hand), never inferred silently here.
+  let nameOverrides: Record<string, { firstName: string; lastName: string }> = {};
+  const nameOverridesRaw = formData.get("nameOverrides");
+  if (typeof nameOverridesRaw === "string" && nameOverridesRaw) {
+    try {
+      nameOverrides = JSON.parse(nameOverridesRaw);
+    } catch {
+      return NextResponse.json({ error: "Corrections de nom invalides." }, { status: 400 });
+    }
+  }
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
@@ -104,16 +117,20 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  const rows: RosterImportRow[] = rawRows.map((r) => ({
-    row: r.row,
-    sheetName: r.sheetName,
-    firstName: r.firstName,
-    lastName: r.lastName,
-    activityName: r.activityName,
-    garderie: r.garderie,
-    notes: r.notes,
-    activityOverride: activityOverrides[rowKey(r.sheetName, r.row)],
-  }));
+  const rows: RosterImportRow[] = rawRows.map((r) => {
+    const nameOverride = nameOverrides[rowKey(r.sheetName, r.row)];
+    return {
+      row: r.row,
+      sheetName: r.sheetName,
+      firstName: nameOverride?.firstName ?? r.firstName,
+      lastName: nameOverride?.lastName ?? r.lastName,
+      fullName: r.fullName,
+      activityName: r.activityName,
+      garderie: r.garderie,
+      notes: r.notes,
+      activityOverride: activityOverrides[rowKey(r.sheetName, r.row)],
+    };
+  });
 
   const { outcomes, summary } = await previewRosterImport(rows, weekStart);
 

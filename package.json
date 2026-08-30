@@ -21,6 +21,7 @@
     "lucide-react": "latest",
     "next": "16.3.0",
     "next-themes": "latest",
+    "openai": "^7.8.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "tailwind-merge": "latest",

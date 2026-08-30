@@ -30,6 +30,7 @@ import {
   type NewChildRecordInput,
 } from "@/server/data-source";
 import type { PresenceRecord } from "@/features/presence/domain/types";
+import { suggestActivityMatch, suggestNameSplit } from "./ai-import-assist";
 import { parseYesNo } from "./excel-import";
 import { PresenceCommandError } from "./errors";
 
@@ -373,6 +374,8 @@ export interface RosterImportRow {
   sheetName: string;
   firstName: string;
   lastName: string;
+  /** Raw "Nom complet" text when the file has no separate name columns. */
+  fullName?: string;
   activityName: string;
   garderie: string;
   notes: string;
@@ -393,6 +396,12 @@ export interface RosterImportOutcome {
   daycareAuto?: boolean;
   notes?: string;
   message?: string;
+  /** OpenAI-suggested correction, shown in the preview UI as a proposal the
+   * admin must explicitly accept (which fills activityOverride / firstName+
+   * lastName and re-previews) — never applied automatically, never written
+   * to Supabase directly. Absent whenever AI assist is disabled, the row
+   * isn't ambiguous, or the model call failed/returned nothing usable. */
+  aiSuggestion?: { activityName?: string; firstName?: string; lastName?: string };
 }
 
 export interface RosterImportSummary {
@@ -405,6 +414,12 @@ export interface RosterImportSummary {
   errors: number;
 }
 
+/** Hard cap on how many AI suggestion calls one preview can trigger — even a
+ * pathological file (garbled headers, hundreds of unmatched rows) can only
+ * ever cost a bounded, small number of OpenAI calls; rows beyond the cap
+ * simply keep the existing manual-correction path with no suggestion. */
+const MAX_AI_SUGGESTIONS_PER_PREVIEW = 60;
+
 /**
  * Preview-only: matches each row against known children (by first+last
  * name, case-insensitive), known activities, and this week's existing
@@ -416,8 +431,20 @@ export interface RosterImportSummary {
  * child already enrolled in the same activity for this exact week is
  * flagged (ALREADY_ENROLLED) purely for visibility — committing it is a
  * harmless no-op upsert, not an error.
+ *
+ * aiAssist (default on for the interactive preview, off for the commit
+ * route's defensive re-preview — see commitRosterImport) optionally calls
+ * OpenAI for rows that are still unresolved after the deterministic pass:
+ * an unmatched activity name, or a missing first/last name when the file
+ * only had a "Nom complet" column. The suggestion is attached to the
+ * outcome for the UI to show as a proposal — it never changes the row's
+ * status or gets written anywhere by itself.
  */
-export async function previewRosterImport(rows: RosterImportRow[], targetWeekStart: string): Promise<{ outcomes: RosterImportOutcome[]; summary: RosterImportSummary }> {
+export async function previewRosterImport(
+  rows: RosterImportRow[],
+  targetWeekStart: string,
+  aiAssist = true,
+): Promise<{ outcomes: RosterImportOutcome[]; summary: RosterImportSummary }> {
   const { weekStart: normalizedTarget } = weekBounds(new Date(`${targetWeekStart}T12:00:00`));
   const [allChildren, activities, roster] = await Promise.all([getChildrenList(), getActivitiesList(), getRosterForWeek(normalizedTarget)]);
   const childByName = new Map(allChildren.filter((c) => c.active).map((c) => [`${c.firstName}|${c.lastName}`.toLowerCase().trim(), c]));
@@ -430,7 +457,7 @@ export async function previewRosterImport(rows: RosterImportRow[], targetWeekSta
     const firstName = row.firstName.trim();
     const lastName = row.lastName.trim();
     if (!firstName || !lastName) {
-      return { row, status: "ERROR", message: "Prénom et nom obligatoires." };
+      return { row, status: "ERROR", message: row.fullName?.trim() ? `Nom complet non séparé : "${row.fullName.trim()}"` : "Prénom et nom obligatoires." };
     }
 
     const activity = row.activityOverride ? activityById.get(row.activityOverride) : activityByName.get(row.activityName.toLowerCase().trim());
@@ -459,6 +486,25 @@ export async function previewRosterImport(rows: RosterImportRow[], targetWeekSta
     }
     return { row, status: "KNOWN_CHILD", childId: child.id, activityId: activity.id, activityName: activity.name, daycareAuto: garderie.value, notes: row.notes.trim() };
   });
+
+  if (aiAssist) {
+    const knownActivityNames = activities.map((a) => a.name);
+    let budget = MAX_AI_SUGGESTIONS_PER_PREVIEW;
+    await Promise.all(
+      outcomes.map(async (outcome, index) => {
+        if (budget <= 0) return;
+        if (outcome.status === "UNKNOWN_ACTIVITY" && !outcome.row.activityOverride && outcome.row.activityName.trim()) {
+          budget--;
+          const suggested = await suggestActivityMatch(outcome.row.activityName, knownActivityNames);
+          if (suggested) outcomes[index] = { ...outcome, aiSuggestion: { ...outcome.aiSuggestion, activityName: suggested } };
+        } else if (outcome.status === "ERROR" && !outcome.row.firstName.trim() && !outcome.row.lastName.trim() && outcome.row.fullName?.trim()) {
+          budget--;
+          const split = await suggestNameSplit(outcome.row.fullName);
+          if (split) outcomes[index] = { ...outcome, aiSuggestion: { ...outcome.aiSuggestion, firstName: split.firstName, lastName: split.lastName } };
+        }
+      }),
+    );
+  }
 
   const byActivityCount = new Map<string, number>();
   for (const o of outcomes) {
@@ -499,10 +545,16 @@ export interface CommitRosterImportResult {
  * outcome by (name, activity) rather than by position — safe because
  * DUPLICATE detection above already guarantees at most one NEW_CHILD row
  * per name in this batch. Every roster write (new, known, or
- * already-enrolled) lands in one final bulk upsert.
+ * already-enrolled) lands in one final bulk upsert. AI assist is disabled
+ * for this re-preview: by commit time every ambiguous row must already have
+ * been explicitly resolved by the admin (activityOverride set, or firstName/
+ * lastName filled in) — a row still unresolved here is simply skipped
+ * (UNKNOWN_ACTIVITY/ERROR are never in the created/roster-written sets), so
+ * calling OpenAI again at the moment of writing real data would only add
+ * cost and an external dependency with zero effect on the outcome.
  */
 export async function commitRosterImport(rows: RosterImportRow[], weekStart: string, actingUserId: string): Promise<CommitRosterImportResult> {
-  const { outcomes, summary } = await previewRosterImport(rows, weekStart);
+  const { outcomes, summary } = await previewRosterImport(rows, weekStart, false);
   const { weekStart: normalizedStart, weekEnd } = weekBounds(new Date(`${weekStart}T12:00:00`));
 
   const toCreate = outcomes.filter((o) => o.status === "NEW_CHILD");
