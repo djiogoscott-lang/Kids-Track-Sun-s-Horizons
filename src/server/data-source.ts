@@ -436,11 +436,24 @@ export async function updateAccountPasswordRecord(userId: string, newPassword: s
 // ---------------------------------------------------------------------------
 
 export { weekBounds } from "@/server/supabase/weekly-roster-repo";
-export type { RosterEntry } from "@/server/supabase/weekly-roster-repo";
+export type { RosterEntry, RosterWeekStatus } from "@/server/supabase/weekly-roster-repo";
 
 export const getRosterForWeek = cache(async (weekStart: string): Promise<supaRoster.RosterEntry[]> => {
   if (!isSupabaseConfigured) return [];
   return supaRoster.getRosterForWeek(weekStart);
+});
+
+/** Distinguishes "no roster was ever created for this week" (normal — falls
+ * back to legacy children.activityId) from "a roster existed and is now
+ * empty" (anomalous — must be surfaced explicitly, never silently masked). */
+export const getRosterWeekStatus = cache(async (weekStart: string): Promise<supaRoster.RosterWeekStatus> => {
+  if (!isSupabaseConfigured) return { liveCount: 0, everActivated: false, isAnomalous: false };
+  return supaRoster.getRosterWeekStatus(weekStart);
+});
+
+export const wasRosterWeekEverActivated = cache(async (weekStart: string): Promise<boolean> => {
+  if (!isSupabaseConfigured) return false;
+  return supaRoster.wasWeekEverActivated(weekStart);
 });
 
 export async function addToRosterRecord(childId: string, activityId: string, weekStart: string, weekEnd: string, createdBy: string | null): Promise<void> {
@@ -449,14 +462,16 @@ export async function addToRosterRecord(childId: string, activityId: string, wee
   return supaRoster.addToRoster(childId, activityId, weekStart, weekEnd, realCreatedBy);
 }
 
-export async function removeFromRosterRecord(childId: string, weekStart: string): Promise<void> {
+export async function removeFromRosterRecord(childId: string, weekStart: string, removedBy: string | null = null): Promise<void> {
   if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion du roster nécessite Supabase.");
-  return supaRoster.removeFromRoster(childId, weekStart);
+  const realRemovedBy = removedBy ? await resolveRealUserId(removedBy) : null;
+  return supaRoster.removeFromRoster(childId, weekStart, realRemovedBy);
 }
 
-export async function resetRosterForActivityWeekRecord(activityId: string, weekStart: string): Promise<number> {
+export async function resetRosterForActivityWeekRecord(activityId: string, weekStart: string, resetBy: string | null = null): Promise<number> {
   if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion du roster nécessite Supabase.");
-  return supaRoster.resetRosterForActivityWeek(activityId, weekStart);
+  const realResetBy = resetBy ? await resolveRealUserId(resetBy) : null;
+  return supaRoster.resetRosterForActivityWeek(activityId, weekStart, realResetBy);
 }
 
 export async function duplicateRosterWeekRecord(fromWeekStart: string, toWeekStart: string, toWeekEnd: string, createdBy: string | null): Promise<number> {

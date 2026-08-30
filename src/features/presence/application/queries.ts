@@ -11,6 +11,7 @@ import {
   getNotificationsForActivityData,
   getRosterForWeek,
   getUnreadCountForActivityData,
+  wasRosterWeekEverActivated,
   weekBounds,
   type ChildRecord,
   type MonitorAdminRecord,
@@ -48,6 +49,14 @@ async function resolveEffectiveActivityMap(allChildren: ChildRecord[], date: Dat
   const { weekStart } = weekBounds(date);
   const roster = await getRosterForWeek(weekStart);
   if (roster.length === 0) {
+    // Empty is the common, expected case for any week that never had a
+    // roster built — only pay for the extra "was this ever activated?"
+    // check here (not on every page load) so an anomalous empty week still
+    // gets flagged in the server logs even if nobody happens to open
+    // /admin/roster to see the banner.
+    if (await wasRosterWeekEverActivated(weekStart)) {
+      console.error(`ANOMALIE weekly_roster: repli silencieux evite pour la semaine ${weekStart} (roster active mais vide).`);
+    }
     return new Map(allChildren.filter((c) => c.active).map((c) => [c.id, c.activityId]));
   }
   return new Map(roster.map((r) => [r.childId, r.activityId]));

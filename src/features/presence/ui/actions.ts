@@ -300,8 +300,8 @@ export async function addChildToRosterAction(childId: string, activityId: string
 }
 
 export async function removeChildFromRosterAction(childId: string, weekStart: string): Promise<ActionResult> {
-  await requireUser("ADMIN");
-  const result = await toResult(() => removeChildFromRoster(childId, weekStart));
+  const admin = await requireUser("ADMIN");
+  const result = await toResult(() => removeChildFromRoster(childId, weekStart, admin.id));
   revalidateRosterViews();
   return result;
 }
@@ -309,9 +309,9 @@ export async function removeChildFromRosterAction(childId: string, weekStart: st
 export type ResetRosterActionResult = { ok: true; removedCount: number } | { ok: false; message: string };
 
 export async function resetRosterForActivityWeekAction(activityId: string, weekStart: string): Promise<ResetRosterActionResult> {
-  await requireUser("ADMIN");
+  const admin = await requireUser("ADMIN");
   try {
-    const { removedCount } = await resetRosterForActivityWeek(activityId, weekStart);
+    const { removedCount } = await resetRosterForActivityWeek(activityId, weekStart, admin.id);
     revalidateRosterViews();
     return { ok: true, removedCount };
   } catch (error) {

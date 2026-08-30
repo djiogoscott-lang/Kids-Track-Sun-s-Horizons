@@ -116,6 +116,7 @@ async function main() {
     check("anon: 0 memberships visible", (await c.query("select id from organization_memberships")).rows.length === 0);
     check("anon: 0 attendance rows visible", (await c.query("select id from attendance")).rows.length === 0);
     check("anon: 0 weekly_roster rows visible", (await c.query("select id from weekly_roster")).rows.length === 0);
+    check("anon: 0 weekly_roster_audit_log rows visible", (await c.query("select id from weekly_roster_audit_log")).rows.length === 0);
   });
 
   // -------------------------------------------------------------------
@@ -141,6 +142,20 @@ async function main() {
 
     const roster = await c.query("select id from weekly_roster");
     check("admin: sees weekly_roster rows across all activities", roster.rows.length >= 0, `got ${roster.rows.length}`);
+
+    const auditLog = await c.query("select id from weekly_roster_audit_log");
+    check("admin: can read weekly_roster_audit_log", auditLog.rows.length >= 0, `got ${auditLog.rows.length}`);
+
+    // No insert policy exists for any role — only the service-role client
+    // (which bypasses RLS) is expected to write here, so even an admin's
+    // authenticated write must be denied.
+    const auditInsert = await attemptWrite(
+      c,
+      `insert into weekly_roster_audit_log (organization_id, action, week_start, rows_affected)
+       values ($1, 'ADD', current_date, 0) returning id`,
+      [byName["Danse"].organization_id],
+    );
+    check("admin: cannot insert into weekly_roster_audit_log (service-role only)", auditInsert.denied, `rowCount=${auditInsert.rowCount}`);
   });
 
   // -------------------------------------------------------------------
@@ -246,6 +261,11 @@ async function main() {
         const otherRoster = await c.query("select id from weekly_roster where activity_id = $1", [otherActivities[0].id]);
         check(`${monitorEmail}: cannot read another activity's roster`, otherRoster.rows.length === 0, `got ${otherRoster.rows.length}`);
       }
+
+      // weekly_roster_audit_log: admin-only read (see weekly_roster_audit_log_read_admin),
+      // no monitor read policy at all — must return 0 rows regardless of scope.
+      const auditLog = await c.query("select id from weekly_roster_audit_log");
+      check(`${monitorEmail}: cannot read weekly_roster_audit_log`, auditLog.rows.length === 0, `got ${auditLog.rows.length}`);
       if (ownChildId) {
         const rosterWrite = await attemptWrite(
           c,

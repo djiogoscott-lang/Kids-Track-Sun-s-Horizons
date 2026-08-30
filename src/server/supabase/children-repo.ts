@@ -176,6 +176,17 @@ export async function deleteChildPermanently(childId: string): Promise<void> {
   const { error } = await supabase.from("children").delete().eq("organization_id", ORGANIZATION_ID).eq("id", childId);
   if (error) {
     if (error.code === "23503") {
+      // Real attendance history was already ruled out above (and any
+      // history-free placeholder rows were just cleaned up), so the only
+      // remaining restrict FK that can fire here is weekly_roster — the
+      // child still has an active roster entry for some week. Reported
+      // accurately rather than reusing the "historique de présence" message,
+      // which would mislead the admin into looking in the wrong place.
+      if (error.message?.includes("weekly_roster")) {
+        throw new ChildHasHistoryError(
+          "Impossible de supprimer : cet enfant est encore inscrit au roster d'une semaine. Retirez-le du roster (Participants de la semaine) avant de le supprimer, ou utilisez Désactiver.",
+        );
+      }
       throw new ChildHasHistoryError(
         "Impossible de supprimer : cet enfant a un historique de présence. Utilisez plutôt Désactiver pour le retirer sans perdre l'historique.",
       );

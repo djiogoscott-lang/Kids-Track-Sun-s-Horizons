@@ -24,6 +24,79 @@ export interface RosterEntry {
   weekEnd: string;
 }
 
+type RosterAuditAction = "ADD" | "REMOVE" | "RESET" | "DUPLICATE" | "IMPORT" | "BACKFILL";
+
+/** Fire-and-forget by design relative to the caller's main result: a logging
+ * failure must never roll back or mask a roster write that already
+ * succeeded. Failures are only surfaced to the server console. */
+async function logRosterAudit(entry: {
+  action: RosterAuditAction;
+  actorId: string | null;
+  weekStart: string;
+  weekEnd?: string | null;
+  activityId?: string | null;
+  rowsAffected: number;
+  detail?: string;
+}): Promise<void> {
+  const supabase = getServiceRoleClient();
+  const { error } = await supabase.from("weekly_roster_audit_log").insert({
+    organization_id: ORGANIZATION_ID,
+    action: entry.action,
+    actor_id: entry.actorId,
+    week_start: entry.weekStart,
+    week_end: entry.weekEnd ?? null,
+    activity_id: entry.activityId ?? null,
+    rows_affected: entry.rowsAffected,
+    detail: entry.detail ?? null,
+  });
+  if (error) console.error("weekly_roster_audit_log insert failed:", error);
+}
+
+function assertScope(field: string, value: string | null | undefined): asserts value is string {
+  if (!value) {
+    throw new Error(`Refus de sécurité : opération weekly_roster sans "${field}" — une portée (semaine/activité/enfant) explicite est obligatoire.`);
+  }
+}
+
+/** Every week that has ever received a real write (add/import/duplicate/
+ * backfill with at least one row) is recorded here implicitly via the audit
+ * log — used to tell "no roster was ever created for this week" (expected,
+ * safe to fall back to legacy children.activityId) apart from "a roster
+ * existed and is now empty" (anomalous, must not be silently masked). */
+export async function wasWeekEverActivated(weekStart: string): Promise<boolean> {
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase
+    .from("weekly_roster_audit_log")
+    .select("id")
+    .eq("organization_id", ORGANIZATION_ID)
+    .eq("week_start", weekStart)
+    .in("action", ["ADD", "IMPORT", "DUPLICATE", "BACKFILL"])
+    .gt("rows_affected", 0)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
+
+export interface RosterWeekStatus {
+  liveCount: number;
+  everActivated: boolean;
+  isAnomalous: boolean;
+}
+
+/** The single source of truth the UI and the resolution layer both use to
+ * decide whether an empty roster for a week is normal (never activated) or
+ * an anomaly (activated, now empty) worth surfacing explicitly. */
+export async function getRosterWeekStatus(weekStart: string): Promise<RosterWeekStatus> {
+  const [entries, everActivated] = await Promise.all([getRosterForWeek(weekStart), wasWeekEverActivated(weekStart)]);
+  const liveCount = entries.length;
+  const isAnomalous = everActivated && liveCount === 0;
+  if (isAnomalous) {
+    console.error(`ANOMALIE weekly_roster: la semaine ${weekStart} a été activée mais ne contient plus aucune ligne.`);
+  }
+  return { liveCount, everActivated, isAnomalous };
+}
+
 /** One query for the whole organization's roster for a given week — callers
  * scope down to a single activity in memory, so every screen that needs
  * "this activity's roster this week" shares one round trip per request. */
@@ -58,6 +131,9 @@ export async function isChildInRoster(childId: string, activityId: string, weekS
  * no-op success, and adding a child already on a DIFFERENT activity's roster
  * for that week moves them — a child has exactly one activity per week. */
 export async function addToRoster(childId: string, activityId: string, weekStart: string, weekEnd: string, createdBy: string | null): Promise<void> {
+  assertScope("childId", childId);
+  assertScope("activityId", activityId);
+  assertScope("weekStart", weekStart);
   const supabase = getServiceRoleClient();
   const { error } = await supabase.from("weekly_roster").upsert(
     {
@@ -72,21 +148,32 @@ export async function addToRoster(childId: string, activityId: string, weekStart
     { onConflict: "child_id,week_start" },
   );
   if (error) throw error;
+  await logRosterAudit({ action: "ADD", actorId: createdBy, weekStart, weekEnd, activityId, rowsAffected: 1 });
 }
 
-export async function removeFromRoster(childId: string, weekStart: string): Promise<void> {
+export async function removeFromRoster(childId: string, weekStart: string, removedBy: string | null = null): Promise<void> {
+  assertScope("childId", childId);
+  assertScope("weekStart", weekStart);
   const supabase = getServiceRoleClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("weekly_roster")
     .delete()
     .eq("organization_id", ORGANIZATION_ID)
     .eq("child_id", childId)
-    .eq("week_start", weekStart);
+    .eq("week_start", weekStart)
+    .select("id, activity_id");
   if (error) throw error;
+  if (data.length > 0) {
+    await logRosterAudit({ action: "REMOVE", actorId: removedBy, weekStart, activityId: data[0].activity_id, rowsAffected: data.length });
+  }
 }
 
-/** Returns the number of rows actually removed, for the confirmation message. */
-export async function resetRosterForActivityWeek(activityId: string, weekStart: string): Promise<number> {
+/** Returns the number of rows actually removed, for the confirmation message.
+ * activityId and weekStart are both mandatory scope — this can never become
+ * an unscoped delete across the whole table (see assertScope). */
+export async function resetRosterForActivityWeek(activityId: string, weekStart: string, resetBy: string | null = null): Promise<number> {
+  assertScope("activityId", activityId);
+  assertScope("weekStart", weekStart);
   const supabase = getServiceRoleClient();
   const { data, error } = await supabase
     .from("weekly_roster")
@@ -96,6 +183,7 @@ export async function resetRosterForActivityWeek(activityId: string, weekStart: 
     .eq("week_start", weekStart)
     .select("id");
   if (error) throw error;
+  await logRosterAudit({ action: "RESET", actorId: resetBy, weekStart, activityId, rowsAffected: data.length });
   return data.length;
 }
 
@@ -104,6 +192,8 @@ export async function resetRosterForActivityWeek(activityId: string, weekStart: 
  * manual edit already made to the new week). Used by the optional "dupliquer
  * la semaine précédente" convenience — never automatic. */
 export async function duplicateRosterWeek(fromWeekStart: string, toWeekStart: string, toWeekEnd: string, createdBy: string | null): Promise<number> {
+  assertScope("fromWeekStart", fromWeekStart);
+  assertScope("toWeekStart", toWeekStart);
   const supabase = getServiceRoleClient();
   const [source, existingTarget] = await Promise.all([getRosterForWeek(fromWeekStart), getRosterForWeek(toWeekStart)]);
   const alreadyPresent = new Set(existingTarget.map((r) => r.childId));
@@ -121,6 +211,14 @@ export async function duplicateRosterWeek(fromWeekStart: string, toWeekStart: st
   if (toInsert.length === 0) return 0;
   const { error } = await supabase.from("weekly_roster").insert(toInsert);
   if (error) throw error;
+  await logRosterAudit({
+    action: "DUPLICATE",
+    actorId: createdBy,
+    weekStart: toWeekStart,
+    weekEnd: toWeekEnd,
+    rowsAffected: toInsert.length,
+    detail: `depuis semaine ${fromWeekStart}`,
+  });
   return toInsert.length;
 }
 
@@ -129,7 +227,9 @@ export async function bulkAddToRoster(
   weekStart: string,
   weekEnd: string,
   createdBy: string | null,
+  action: Extract<RosterAuditAction, "IMPORT" | "ADD" | "BACKFILL"> = "IMPORT",
 ): Promise<void> {
+  assertScope("weekStart", weekStart);
   if (entries.length === 0) return;
   const supabase = getServiceRoleClient();
   const rows = entries.map((e) => ({
@@ -143,4 +243,5 @@ export async function bulkAddToRoster(
   }));
   const { error } = await supabase.from("weekly_roster").upsert(rows, { onConflict: "child_id,week_start" });
   if (error) throw error;
+  await logRosterAudit({ action, actorId: createdBy, weekStart, weekEnd, rowsAffected: rows.length });
 }

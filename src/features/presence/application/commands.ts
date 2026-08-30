@@ -339,8 +339,8 @@ export async function addChildToRoster(childId: string, activityId: string, week
   await addToRosterRecord(childId, activityId, normalizedStart, weekEnd, addedBy);
 }
 
-export async function removeChildFromRoster(childId: string, weekStart: string) {
-  await removeFromRosterRecord(childId, weekStart);
+export async function removeChildFromRoster(childId: string, weekStart: string, removedBy: string | null = null) {
+  await removeFromRosterRecord(childId, weekStart, removedBy);
 }
 
 export interface ResetRosterResult {
@@ -353,10 +353,10 @@ export interface ResetRosterResult {
  * one activity's one week, so a simple confirm/cancel (no typed word) is
  * enough friction, matching the spec's lighter confirmation for this action.
  */
-export async function resetRosterForActivityWeek(activityId: string, weekStart: string): Promise<ResetRosterResult> {
+export async function resetRosterForActivityWeek(activityId: string, weekStart: string, resetBy: string | null = null): Promise<ResetRosterResult> {
   const activities = await getActivitiesList();
   if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
-  const removedCount = await resetRosterForActivityWeekRecord(activityId, weekStart);
+  const removedCount = await resetRosterForActivityWeekRecord(activityId, weekStart, resetBy);
   return { removedCount };
 }
 

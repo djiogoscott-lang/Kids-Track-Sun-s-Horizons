@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { getActivitiesList, weekBounds } from "@/server/data-source";
+import { getActivitiesList, getRosterWeekStatus, weekBounds } from "@/server/data-source";
 import { getRosterForWeekView, listChildrenForAdmin } from "@/features/presence/application/queries";
 import { AddToRosterDialog } from "@/features/presence/ui/add-to-roster-dialog";
 import { DuplicateWeekButton } from "@/features/presence/ui/duplicate-week-button";
@@ -26,7 +26,12 @@ export default async function AdminRosterPage({ searchParams }: { searchParams: 
   const previousWeekStart = shiftDate(weekStart, -7);
   const thisWeekStart = weekBounds(new Date()).weekStart;
 
-  const [activities, roster, allChildren] = await Promise.all([getActivitiesList(), getRosterForWeekView(weekStart), listChildrenForAdmin()]);
+  const [activities, roster, allChildren, weekStatus] = await Promise.all([
+    getActivitiesList(),
+    getRosterForWeekView(weekStart),
+    listChildrenForAdmin(),
+    getRosterWeekStatus(weekStart),
+  ]);
   const activeChildren = allChildren.filter((c) => c.active);
   const totalParticipants = roster.reduce((sum, a) => sum + a.participants.length, 0);
 
@@ -73,6 +78,17 @@ export default async function AdminRosterPage({ searchParams }: { searchParams: 
         </a>
         {totalParticipants === 0 ? <DuplicateWeekButton fromWeekStart={previousWeekStart} toWeekStart={weekStart} /> : null}
       </div>
+
+      {weekStatus.isAnomalous ? (
+        <div className="rounded-2xl border-2 border-[var(--danger)] bg-[var(--danger-bg)] p-4 text-sm text-[var(--danger)]">
+          <p className="font-bold">⚠️ Anomalie détectée</p>
+          <p className="mt-1">
+            Le roster de cette semaine a déjà été activé (import, ajout ou duplication) mais ne contient plus aucune ligne. Ce n&apos;est pas l&apos;état
+            normal d&apos;une semaine qui n&apos;a jamais eu de roster — vérifiez avant d&apos;ajouter des participants. Vous pouvez dupliquer la semaine
+            précédente pour restaurer une base de départ.
+          </p>
+        </div>
+      ) : null}
 
       {totalParticipants === 0 ? (
         <EmptyState
