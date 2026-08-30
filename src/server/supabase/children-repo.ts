@@ -136,6 +136,40 @@ export async function updateChild(childId: string, update: SupabaseChildUpdate):
 
 export class ChildHasHistoryError extends Error {}
 
+export interface BulkDeleteBlocked {
+  id: string;
+  firstName: string;
+  lastName: string;
+  reason: "HISTORY" | "ROSTER";
+}
+
+export interface BulkDeleteOutcome {
+  deletedIds: string[];
+  blocked: BulkDeleteBlocked[];
+}
+
+/**
+ * A single Postgres function call, not a loop of individual deletes: every
+ * id's eligibility (no real attendance history, no weekly_roster reference)
+ * is computed once and both cleanup deletes happen inside that same function
+ * invocation's transaction. This is what makes it both O(1) round trips
+ * regardless of how many ids are selected, and race-free — unlike a
+ * check-then-delete loop from this layer, nothing can write a real
+ * attendance row for a targeted child in the gap between the check and the
+ * delete, because there is no gap visible outside the single statement.
+ */
+export async function bulkDeleteChildrenPermanently(childIds: string[]): Promise<BulkDeleteOutcome> {
+  if (childIds.length === 0) return { deletedIds: [], blocked: [] };
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase.rpc("bulk_delete_children", {
+    p_organization_id: ORGANIZATION_ID,
+    p_child_ids: childIds,
+  });
+  if (error) throw error;
+  const result = data as { deletedIds: string[]; blocked: BulkDeleteBlocked[] };
+  return { deletedIds: result.deletedIds ?? [], blocked: result.blocked ?? [] };
+}
+
 /**
  * Physical deletion, not deactivation. attendance.child_id is ON DELETE
  * RESTRICT, but every child gets an empty placeholder attendance row the

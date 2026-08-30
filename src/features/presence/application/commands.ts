@@ -6,6 +6,7 @@ import {
   closeDay,
   createAccountRecord,
   createChildRecord,
+  bulkDeleteChildRecordsPermanently,
   deleteChildRecordPermanently,
   duplicateRosterWeekRecord,
   getActivitiesList,
@@ -234,32 +235,19 @@ export interface BulkDeleteResult {
 }
 
 /**
- * Each child is attempted independently rather than as one all-or-nothing
- * operation: a batch of 24 children where 3 have history should delete the
- * 21 that can be deleted and clearly report the 3 that can't, not fail the
- * whole batch over rows that were never going to succeed anyway.
+ * One batched call, not a loop: eligibility (no real history, no roster
+ * reference) is decided for the whole selection at once and both cleanup
+ * deletes run inside a single Postgres function call, so a batch of 24
+ * children where 3 are blocked deletes the 21 that can be deleted and
+ * clearly reports the 3 that can't — without the round-trip cost or the
+ * check-then-delete race window a per-child loop would carry.
  */
 export async function bulkDeleteChildren(childIds: string[], confirmationText: string): Promise<BulkDeleteResult> {
   if (confirmationText.trim().toUpperCase() !== "SUPPRIMER") {
     throw new PresenceCommandError('Tapez "SUPPRIMER" pour confirmer.');
   }
-  let deletedCount = 0;
-  const blockedNames: string[] = [];
-  for (const childId of childIds) {
-    const child = await getChildById(childId);
-    if (!child) continue;
-    try {
-      await deleteChildRecordPermanently(childId);
-      deletedCount++;
-    } catch (error) {
-      if (error instanceof PresenceCommandError) {
-        blockedNames.push(`${child.firstName} ${child.lastName}`);
-      } else {
-        throw error;
-      }
-    }
-  }
-  return { deletedCount, blockedNames };
+  const { deletedIds, blocked } = await bulkDeleteChildRecordsPermanently(childIds);
+  return { deletedCount: deletedIds.length, blockedNames: blocked.map((b) => `${b.firstName} ${b.lastName}`) };
 }
 
 export async function sendNotification(activityId: string, message: string, createdByUserId: string, createdByName: string) {

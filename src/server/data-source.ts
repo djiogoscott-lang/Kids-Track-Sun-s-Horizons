@@ -188,6 +188,19 @@ export async function deleteChildRecordPermanently(childId: string): Promise<voi
   }
 }
 
+export type { BulkDeleteOutcome } from "@/server/supabase/children-repo";
+
+/** True batch deletion — one Postgres function call for the whole selection,
+ * never a loop of per-child requests. See bulkDeleteChildrenPermanently()
+ * in children-repo.ts for why this also closes the race window a
+ * check-then-delete loop would otherwise leave open. */
+export async function bulkDeleteChildRecordsPermanently(childIds: string[]): Promise<supaChildren.BulkDeleteOutcome> {
+  if (!isSupabaseConfigured) {
+    throw new PresenceCommandError("La suppression définitive nécessite Supabase.");
+  }
+  return supaChildren.bulkDeleteChildrenPermanently(childIds);
+}
+
 // ---------------------------------------------------------------------------
 // Attendance — the date dimension the demo store never had. Reads are always
 // scoped to an explicit date (defaulting to "today"), so the exact same

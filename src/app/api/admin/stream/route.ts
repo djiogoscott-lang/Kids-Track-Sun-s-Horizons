@@ -11,6 +11,13 @@ import { subscribeToAdminUpdates, type AdminLiveEvent } from "@/server/demo/noti
 // EventEmitter that can't be relied on across Vercel's serverless instances.
 export const dynamic = "force-dynamic";
 
+// Without this, Vercel's default Serverless Function timeout (as low as
+// 10-15s depending on plan) cuts the connection before the first heartbeat
+// ever fires, turning "live updates" into a constant reconnect loop instead
+// of a stable stream. 60s is the highest value guaranteed to be accepted on
+// every Vercel plan (Hobby's own hard ceiling), safely above HEARTBEAT_MS.
+export const maxDuration = 60;
+
 const HEARTBEAT_MS = 25_000;
 
 export async function GET() {
