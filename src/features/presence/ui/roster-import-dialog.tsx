@@ -124,6 +124,7 @@ export function RosterImportDialog({
   // past it, fileInputRef.current is unmounted (null), so re-reading
   // .files from the ref on a later correction would silently lose the file.
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileChosen, setFileChosen] = useState(false);
   const [importAllSheets, setImportAllSheets] = useState(false);
   const [selectedSheetName, setSelectedSheetName] = useState<string | undefined>(undefined);
   const [result, setResult] = useState<{ ok: boolean; message: string; byActivity?: Array<{ activityName: string; count: number }> } | null>(null);
@@ -141,6 +142,7 @@ export function RosterImportDialog({
     setSelectedSheetName(undefined);
     setResult(null);
     setSelectedFile(null);
+    setFileChosen(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -336,12 +338,19 @@ export function RosterImportDialog({
                 L&apos;ordre des colonnes n&apos;a pas d&apos;importance. Vous verrez un aperçu classé par activité avant toute écriture — une IA peut
                 suggérer une correction pour une activité non reconnue ou un nom non séparé, mais rien n&apos;est jamais appliqué sans votre confirmation.
               </p>
-              <input ref={fileInputRef} type="file" accept=".xlsx" className="block w-full text-sm" aria-label="Choisir un fichier Excel" />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx"
+                className="block w-full text-sm"
+                aria-label="Choisir un fichier Excel"
+                onChange={(e) => setFileChosen(!!e.target.files?.[0])}
+              />
               {error ? <p role="alert" className="text-sm font-medium text-[var(--danger)]">{error}</p> : null}
               <div className="flex gap-2">
                 <button
                   type="button"
-                  disabled={isPending}
+                  disabled={isPending || !fileChosen}
                   onClick={() => analyze()}
                   className="tap-scale h-12 flex-1 rounded-xl bg-[var(--foreground)] text-sm font-bold text-white disabled:opacity-50"
                 >

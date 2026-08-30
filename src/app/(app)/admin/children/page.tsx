@@ -4,10 +4,11 @@ import { listChildrenForAdmin } from "@/features/presence/application/queries";
 import { ChildrenSearchList } from "@/features/presence/ui/children-search-list";
 import { ExcelImportDialog } from "@/features/presence/ui/excel-import-dialog";
 import { requireUser } from "@/lib/auth/require-user";
+import { getActivitiesList } from "@/server/data-source";
 
 export default async function AdminChildrenPage() {
   await requireUser("ADMIN");
-  const children = await listChildrenForAdmin();
+  const [children, activities] = await Promise.all([listChildrenForAdmin(), getActivitiesList()]);
 
   return (
     <div className="space-y-6">
@@ -36,7 +37,7 @@ export default async function AdminChildrenPage() {
         </div>
       </div>
 
-      <ChildrenSearchList childrenList={children} />
+      <ChildrenSearchList childrenList={children} activityNames={activities.map((a) => a.name)} />
     </div>
   );
 }

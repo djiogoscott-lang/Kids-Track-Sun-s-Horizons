@@ -35,6 +35,7 @@ export function ExcelImportDialog() {
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [includeDuplicates, setIncludeDuplicates] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [fileChosen, setFileChosen] = useState(false);
 
   function reset() {
     setStep("pick");
@@ -43,6 +44,7 @@ export function ExcelImportDialog() {
     setPreview(null);
     setIncludeDuplicates(false);
     setResult(null);
+    setFileChosen(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -142,12 +144,13 @@ export function ExcelImportDialog() {
                 accept=".xlsx"
                 className="block w-full text-sm"
                 aria-label="Choisir un fichier Excel"
+                onChange={(e) => setFileChosen(!!e.target.files?.[0])}
               />
               {error ? <p role="alert" className="text-sm font-medium text-[var(--danger)]">{error}</p> : null}
               <div className="flex gap-2">
                 <button
                   type="button"
-                  disabled={isPending}
+                  disabled={isPending || !fileChosen}
                   onClick={() => analyze()}
                   className="tap-scale h-12 flex-1 rounded-xl bg-[var(--foreground)] text-sm font-bold text-white disabled:opacity-50"
                 >

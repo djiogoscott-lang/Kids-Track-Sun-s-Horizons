@@ -11,7 +11,7 @@ import type { ChildAdminRow } from "@/features/presence/application/queries";
 
 type SortKey = "name-asc" | "name-desc" | "created-desc" | "created-asc";
 
-export function ChildrenSearchList({ childrenList }: { childrenList: ChildAdminRow[] }) {
+export function ChildrenSearchList({ childrenList, activityNames }: { childrenList: ChildAdminRow[]; activityNames: string[] }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [activityFilter, setActivityFilter] = useState("ALL");
@@ -28,9 +28,9 @@ export function ChildrenSearchList({ childrenList }: { childrenList: ChildAdminR
   const [bulkResult, setBulkResult] = useState<{ deletedCount: number; blockedNames: string[] } | null>(null);
 
   const activities = useMemo(() => {
-    const names = new Set(childrenList.map((c) => c.activityName));
+    const names = new Set([...activityNames, ...childrenList.map((c) => c.activityName)]);
     return Array.from(names).sort();
-  }, [childrenList]);
+  }, [activityNames, childrenList]);
 
   const filtered = childrenList
     .filter((child) => {
