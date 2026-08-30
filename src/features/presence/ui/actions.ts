@@ -8,22 +8,31 @@ import {
   bulkDeleteChildren,
   closeActivityDay,
   createAccount,
+  createActivity,
   createChild,
+  deleteActivity,
   deleteChildPermanently,
   duplicatePreviousWeekRoster,
+  getActivityDependencyCounts,
+  getOperationalResetPreview,
   markAbsent,
   markArrived,
   markLeft,
   markNotificationsRead,
   markStillPresent,
   removeChildFromRoster,
+  resetOperationalData,
   resetRosterForActivityWeek,
   sendNotification,
   setChildActive,
   setMonitorActive,
+  unassignActivityMonitor,
+  updateActivity,
   updateChild,
   updateMonitorName,
   updateMonitorPassword,
+  type CreateActivityInput,
+  type UpdateActivityInput,
   type UpdateChildInput,
 } from "@/features/presence/application/commands";
 import { getActivityDetail, getActivityIdForMonitor, getEffectiveActivityIdForChild } from "@/features/presence/application/queries";
@@ -214,8 +223,59 @@ export async function assignMonitorAction(activityId: string, monitorId: string)
   await requireUser("ADMIN");
   const result = await toResult(() => assignMonitor(activityId, monitorId));
   revalidatePath("/admin");
+  revalidatePath("/admin/activities");
   revalidatePath("/activities");
   revalidatePath(`/activities/${activityId}`);
+  return result;
+}
+
+function revalidateActivityAdminViews(activityId?: string) {
+  revalidatePath("/admin/activities");
+  revalidatePath("/admin/monitors");
+  revalidatePath("/activities");
+  revalidatePath("/admin/roster");
+  if (activityId) revalidatePath(`/activities/${activityId}`);
+}
+
+export async function unassignMonitorAction(activityId: string): Promise<ActionResult> {
+  await requireUser("ADMIN");
+  const result = await toResult(() => unassignActivityMonitor(activityId));
+  revalidateActivityAdminViews(activityId);
+  return result;
+}
+
+export async function createActivityAction(input: CreateActivityInput): Promise<ActionResult> {
+  await requireUser("ADMIN");
+  const result = await toResult(() => createActivity(input));
+  revalidateActivityAdminViews();
+  return result;
+}
+
+export async function updateActivityAction(activityId: string, input: UpdateActivityInput): Promise<ActionResult> {
+  await requireUser("ADMIN");
+  const result = await toResult(() => updateActivity(activityId, input));
+  revalidateActivityAdminViews(activityId);
+  return result;
+}
+
+export type ActivityDependencyResult =
+  | { ok: true; children: number; weeklyRoster: number; attendance: number; activityDayState: number; notifications: number }
+  | { ok: false; message: string };
+
+export async function getActivityDependencyCountsAction(activityId: string): Promise<ActivityDependencyResult> {
+  await requireUser("ADMIN");
+  try {
+    const counts = await getActivityDependencyCounts(activityId);
+    return { ok: true, ...counts };
+  } catch {
+    return { ok: false, message: "Une erreur est survenue. Veuillez réessayer." };
+  }
+}
+
+export async function deleteActivityAction(activityId: string): Promise<ActionResult> {
+  await requireUser("ADMIN");
+  const result = await toResult(() => deleteActivity(activityId));
+  revalidateActivityAdminViews(activityId);
   return result;
 }
 
@@ -332,6 +392,57 @@ export async function duplicatePreviousWeekAction(fromWeekStart: string, toWeekS
   } catch (error) {
     if (error instanceof PresenceCommandError) return { ok: false, message: error.message };
     console.error("Unexpected error duplicating roster week:", error);
+    return { ok: false, message: "Une erreur est survenue. Veuillez réessayer." };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Operational reset — the most destructive action in the app. ADMIN-only,
+// and the preview must always be re-fetched fresh right before the confirm
+// button is even shown (never trust counts computed earlier in the session)
+// since a monitor could have added attendance in the meantime.
+// ---------------------------------------------------------------------------
+
+export type ResetPreviewResult =
+  | { ok: true; attendance: number; activityDayState: number; weeklyRoster: number; notifications: number }
+  | { ok: false; message: string };
+
+export async function getOperationalResetPreviewAction(): Promise<ResetPreviewResult> {
+  await requireUser("ADMIN");
+  try {
+    const counts = await getOperationalResetPreview();
+    return { ok: true, ...counts };
+  } catch {
+    return { ok: false, message: "Une erreur est survenue. Veuillez réessayer." };
+  }
+}
+
+export type ResetOperationalDataResult =
+  | { ok: true; attendance: number; activityDayState: number; weeklyRoster: number; notifications: number }
+  | { ok: false; message: string };
+
+function revalidateAfterReset() {
+  revalidatePath("/admin/activities");
+  revalidatePath("/admin/roster");
+  revalidatePath("/admin/presences");
+  revalidatePath("/admin/departures");
+  revalidatePath("/admin/notifications");
+  revalidatePath("/admin/history");
+  revalidatePath("/admin/history/week");
+  revalidatePath("/activities");
+  revalidatePath("/garderie");
+  revalidatePath("/notifications");
+}
+
+export async function resetOperationalDataAction(): Promise<ResetOperationalDataResult> {
+  const admin = await requireUser("ADMIN");
+  try {
+    const counts = await resetOperationalData(admin.id);
+    revalidateAfterReset();
+    return { ok: true, ...counts };
+  } catch (error) {
+    if (error instanceof PresenceCommandError) return { ok: false, message: error.message };
+    console.error("Unexpected error resetting operational data:", error);
     return { ok: false, message: "Une erreur est survenue. Veuillez réessayer." };
   }
 }

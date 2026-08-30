@@ -36,12 +36,15 @@ import * as supaNotifications from "@/server/supabase/notifications-repo";
 import * as demoNotifications from "@/server/demo/notifications-store";
 import * as supaMonitors from "@/server/supabase/monitors-repo";
 import * as supaRoster from "@/server/supabase/weekly-roster-repo";
+import * as supaReset from "@/server/supabase/operational-reset-repo";
 import { PresenceCommandError } from "@/features/presence/application/errors";
 
 export interface ActivityRecord {
   id: string;
   name: string;
+  description: string;
   monitorId: string | null;
+  active: boolean;
 }
 
 export interface MonitorRecord {
@@ -72,7 +75,7 @@ export interface ChildRecord {
 export const getActivitiesList = cache(async (): Promise<ActivityRecord[]> => {
   if (!isSupabaseConfigured) {
     const assignments = getActivityAssignments();
-    return ACTIVITIES.map((a) => ({ id: a.id, name: a.name, monitorId: assignments.get(a.id) ?? null }));
+    return ACTIVITIES.map((a) => ({ id: a.id, name: a.name, description: "", monitorId: assignments.get(a.id) ?? null, active: true }));
   }
 
   const activities = await supaActivities.getActivities();
@@ -84,6 +87,49 @@ export const getActivitiesList = cache(async (): Promise<ActivityRecord[]> => {
     return { ...a, monitorId: (demoActivityId && demoAssignments.get(demoActivityId)) ?? null };
   });
 });
+
+export interface NewActivityInput {
+  name: string;
+  description: string;
+  monitorId: string | null;
+  active: boolean;
+}
+
+export async function createActivityRecord(input: NewActivityInput): Promise<ActivityRecord> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion des activités nécessite Supabase.");
+  return supaActivities.createActivity(input);
+}
+
+export type ActivityRecordUpdate = Partial<Pick<NewActivityInput, "name" | "description" | "active">>;
+
+export async function updateActivityRecord(activityId: string, update: ActivityRecordUpdate): Promise<ActivityRecord> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion des activités nécessite Supabase.");
+  return supaActivities.updateActivity(activityId, update);
+}
+
+export async function removeActivityMonitorRecord(activityId: string): Promise<void> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion des activités nécessite Supabase.");
+  return supaActivities.removeActivityMonitor(activityId);
+}
+
+export type { ActivityDependencyCounts } from "@/server/supabase/activities-repo";
+
+export async function getActivityDependencyCountsRecord(activityId: string): Promise<supaActivities.ActivityDependencyCounts> {
+  if (!isSupabaseConfigured) return { children: 0, weeklyRoster: 0, attendance: 0, activityDayState: 0, notifications: 0 };
+  return supaActivities.getActivityDependencyCounts(activityId);
+}
+
+export async function deleteActivityRecord(activityId: string): Promise<void> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion des activités nécessite Supabase.");
+  try {
+    await supaActivities.deleteActivity(activityId);
+  } catch (error) {
+    if (error instanceof supaActivities.ActivityHasDataError) {
+      throw new PresenceCommandError(error.message);
+    }
+    throw error;
+  }
+}
 
 export const getMonitorsList = cache(async (): Promise<MonitorRecord[]> => {
   if (isSupabaseAuthEnabled) return supaActivities.getMonitors();
@@ -502,4 +548,24 @@ export async function bulkAddToRosterRecord(
   if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion du roster nécessite Supabase.");
   const realCreatedBy = createdBy ? await resolveRealUserId(createdBy) : null;
   return supaRoster.bulkAddToRoster(entries, weekStart, weekEnd, realCreatedBy);
+}
+
+// ---------------------------------------------------------------------------
+// Operational reset — empties attendance, activity_day_state, weekly_roster,
+// and notifications for the organization. Never touches children,
+// activities, profiles, or organizations. Supabase-only: demo mode has no
+// persistence story to reset in the first place.
+// ---------------------------------------------------------------------------
+
+export type { OperationalResetCounts } from "@/server/supabase/operational-reset-repo";
+
+export async function getOperationalResetPreviewRecord(): Promise<supaReset.OperationalResetCounts> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La réinitialisation nécessite Supabase.");
+  return supaReset.getOperationalResetPreview();
+}
+
+export async function resetOperationalDataRecord(actorId: string): Promise<supaReset.OperationalResetCounts> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La réinitialisation nécessite Supabase.");
+  const realActorId = await resolveRealUserId(actorId);
+  return supaReset.resetOperationalData(realActorId);
 }

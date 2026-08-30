@@ -4,7 +4,9 @@ import { getActivitiesList } from "@/server/data-source";
 
 export default async function NewChildPage() {
   await requireUser("ADMIN");
-  const activities = await getActivitiesList();
+  const allActivities = await getActivitiesList();
+  // A new enrollment can only ever target an active activity.
+  const activities = allActivities.filter((a) => a.active);
 
   return (
     <div className="space-y-6">

@@ -19,8 +19,12 @@ const STATUS_LABEL: Record<string, string> = {
 export default async function EditChildPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser("ADMIN");
   const { id } = await params;
-  const [child, activities, history] = await Promise.all([getChildForAdmin(id), getActivitiesList(), getChildHistory(id)]);
+  const [child, allActivities, history] = await Promise.all([getChildForAdmin(id), getActivitiesList(), getChildHistory(id)]);
   if (!child) notFound();
+  // Reassignment can only target an active activity, except the child's own
+  // current one — kept selectable (even if since deactivated) so editing
+  // this form never silently strands an existing assignment.
+  const activities = allActivities.filter((a) => a.active || a.id === child.activityId);
 
   return (
     <div className="space-y-6">

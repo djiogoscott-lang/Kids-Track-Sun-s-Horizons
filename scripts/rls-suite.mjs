@@ -156,6 +156,19 @@ async function main() {
       [byName["Danse"].organization_id],
     );
     check("admin: cannot insert into weekly_roster_audit_log (service-role only)", auditInsert.denied, `rowCount=${auditInsert.rowCount}`);
+
+    const resetLog = await c.query("select id from operational_reset_log");
+    check("admin: can read operational_reset_log", resetLog.rows.length >= 0, `got ${resetLog.rows.length}`);
+
+    const resetLogInsert = await attemptWrite(
+      c,
+      `insert into operational_reset_log (organization_id, attendance_rows) values ($1, 0) returning id`,
+      [byName["Danse"].organization_id],
+    );
+    check("admin: cannot insert into operational_reset_log (service-role only)", resetLogInsert.denied, `rowCount=${resetLogInsert.rowCount}`);
+
+    const resetRpc = await attemptWrite(c, `select public.reset_operational_data($1, null)`, [byName["Danse"].organization_id]);
+    check("admin: cannot call reset_operational_data directly (service-role only)", resetRpc.denied, `rowCount=${resetRpc.rowCount}`);
   });
 
   // -------------------------------------------------------------------
@@ -219,6 +232,21 @@ async function main() {
         check(`${monitorEmail}: cannot write children even for own activity`, writeOwn.rowCount === 0, `rowCount=${writeOwn.rowCount}`);
       }
 
+      // activities table has no monitor-write policy at all — admin-only by
+      // design, including for the monitor's own assigned activity.
+      const writeActivity = await c.query("update activities set name = name where id = $1 returning id", [activity.id]);
+      check(`${monitorEmail}: cannot rename own activity`, writeActivity.rowCount === 0, `rowCount=${writeActivity.rowCount}`);
+
+      const insActivity = await attemptWrite(
+        c,
+        `insert into activities (organization_id, name) values ($1, 'rls-suite probe activity') returning id`,
+        [activity.organization_id],
+      );
+      check(`${monitorEmail}: cannot create activities (admin-only)`, insActivity.denied, `rowCount=${insActivity.rowCount}`);
+
+      const delActivity = await c.query("delete from activities where id = $1 returning id", [activity.id]);
+      check(`${monitorEmail}: cannot delete own activity`, delActivity.rowCount === 0, `rowCount=${delActivity.rowCount}`);
+
       // attendance: monitor CAN write within their own activity...
       if (ownChildId) {
         const insAttendance = await attemptWrite(
@@ -266,6 +294,14 @@ async function main() {
       // no monitor read policy at all — must return 0 rows regardless of scope.
       const auditLog = await c.query("select id from weekly_roster_audit_log");
       check(`${monitorEmail}: cannot read weekly_roster_audit_log`, auditLog.rows.length === 0, `got ${auditLog.rows.length}`);
+
+      // operational_reset_log: admin-only read, and the reset RPC itself is
+      // service-role-only — a monitor must not be able to see past resets
+      // or trigger one, not even scoped to their own activity.
+      const resetLog = await c.query("select id from operational_reset_log");
+      check(`${monitorEmail}: cannot read operational_reset_log`, resetLog.rows.length === 0, `got ${resetLog.rows.length}`);
+      const resetRpc = await attemptWrite(c, `select public.reset_operational_data($1, null)`, [activity.organization_id]);
+      check(`${monitorEmail}: cannot call reset_operational_data`, resetRpc.denied, `rowCount=${resetRpc.rowCount}`);
       if (ownChildId) {
         const rosterWrite = await attemptWrite(
           c,

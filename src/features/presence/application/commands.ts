@@ -5,12 +5,17 @@ import {
   bulkCreateChildRecords,
   closeDay,
   createAccountRecord,
+  createActivityRecord,
   createChildRecord,
   bulkDeleteChildRecordsPermanently,
+  deleteActivityRecord,
   deleteChildRecordPermanently,
   duplicateRosterWeekRecord,
   getActivitiesList,
+  getActivityDependencyCountsRecord,
   getAttendanceMap,
+  getOperationalResetPreviewRecord,
+  resetOperationalDataRecord,
   getChildById,
   getChildrenList,
   getDayState,
@@ -18,15 +23,18 @@ import {
   getRosterForWeek,
   isMonitorEmailTaken,
   markActivityNotificationsReadData,
+  removeActivityMonitorRecord,
   removeFromRosterRecord,
   resetRosterForActivityWeekRecord,
   setAttendance,
   setMonitorActiveRecord,
   setMonitorForActivity,
   updateAccountPasswordRecord,
+  updateActivityRecord,
   updateChildRecord,
   updateMonitorNameRecord,
   weekBounds,
+  type ActivityRecord,
   type ChildRecord,
   type NewChildRecordInput,
 } from "@/server/data-source";
@@ -131,9 +139,86 @@ export async function addChildToDaycare(childId: string, recordedBy: string, now
 
 export async function assignMonitor(activityId: string, monitorId: string) {
   const [activities, monitors] = await Promise.all([getActivitiesList(), getMonitorsList()]);
-  if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
+  const activity = activities.find((a) => a.id === activityId);
+  if (!activity) throw new PresenceCommandError("Activité introuvable.");
   if (!monitors.some((m) => m.id === monitorId)) throw new PresenceCommandError("Moniteur introuvable.");
+  if (activity.monitorId) {
+    const currentName = monitors.find((m) => m.id === activity.monitorId)?.name ?? "un autre moniteur";
+    if (activity.monitorId !== monitorId) {
+      throw new PresenceCommandError(`Cette activité est déjà attribuée à ${currentName}. Retirez-le d'abord avant d'attribuer un autre moniteur.`);
+    }
+  }
   await setMonitorForActivity(activityId, monitorId);
+}
+
+export async function unassignActivityMonitor(activityId: string) {
+  const activities = await getActivitiesList();
+  if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
+  await removeActivityMonitorRecord(activityId);
+}
+
+const ACTIVITY_NAME_MAX = 160;
+const ACTIVITY_DESCRIPTION_MAX = 1000;
+
+function assertValidActivityName(name: string, existing: ActivityRecord[], excludingId?: string) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new PresenceCommandError("Le nom de l'activité est obligatoire.");
+  if (trimmed.length > ACTIVITY_NAME_MAX) throw new PresenceCommandError(`Le nom ne peut pas dépasser ${ACTIVITY_NAME_MAX} caractères.`);
+  const clash = existing.find((a) => a.id !== excludingId && a.name.trim().toLowerCase() === trimmed.toLowerCase());
+  if (clash) throw new PresenceCommandError(`Une activité nommée "${trimmed}" existe déjà.`);
+}
+
+export interface CreateActivityInput {
+  name: string;
+  description: string;
+  monitorId: string | null;
+  active: boolean;
+}
+
+export async function createActivity(input: CreateActivityInput): Promise<ActivityRecord> {
+  const [activities, monitors] = await Promise.all([getActivitiesList(), getMonitorsList()]);
+  assertValidActivityName(input.name, activities);
+  if (input.description.length > ACTIVITY_DESCRIPTION_MAX) {
+    throw new PresenceCommandError(`La description ne peut pas dépasser ${ACTIVITY_DESCRIPTION_MAX} caractères.`);
+  }
+  if (input.monitorId) {
+    if (!monitors.some((m) => m.id === input.monitorId)) throw new PresenceCommandError("Moniteur introuvable.");
+    const alreadyAssigned = activities.find((a) => a.monitorId === input.monitorId);
+    if (alreadyAssigned) {
+      throw new PresenceCommandError(`Ce moniteur est déjà attribué à ${alreadyAssigned.name}.`);
+    }
+  }
+  return createActivityRecord({ name: input.name.trim(), description: input.description.trim(), monitorId: input.monitorId, active: input.active });
+}
+
+export interface UpdateActivityInput {
+  name?: string;
+  description?: string;
+  active?: boolean;
+}
+
+export async function updateActivity(activityId: string, input: UpdateActivityInput): Promise<ActivityRecord> {
+  const activities = await getActivitiesList();
+  if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
+  if (input.name !== undefined) assertValidActivityName(input.name, activities, activityId);
+  if (input.description !== undefined && input.description.length > ACTIVITY_DESCRIPTION_MAX) {
+    throw new PresenceCommandError(`La description ne peut pas dépasser ${ACTIVITY_DESCRIPTION_MAX} caractères.`);
+  }
+  return updateActivityRecord(activityId, {
+    name: input.name?.trim(),
+    description: input.description?.trim(),
+    active: input.active,
+  });
+}
+
+export async function deleteActivity(activityId: string): Promise<void> {
+  const activities = await getActivitiesList();
+  if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
+  await deleteActivityRecord(activityId);
+}
+
+export async function getActivityDependencyCounts(activityId: string) {
+  return getActivityDependencyCountsRecord(activityId);
 }
 
 /**
@@ -436,7 +521,11 @@ export async function previewRosterImport(
   const { weekStart: normalizedTarget } = weekBounds(new Date(`${targetWeekStart}T12:00:00`));
   const [allChildren, activities, roster] = await Promise.all([getChildrenList(), getActivitiesList(), getRosterForWeek(normalizedTarget)]);
   const childByName = new Map(allChildren.filter((c) => c.active).map((c) => [`${c.firstName}|${c.lastName}`.toLowerCase().trim(), c]));
-  const activityByName = new Map(activities.map((a) => [a.name.toLowerCase().trim(), a]));
+  // Inactive activities are never auto-matched by name — an inactive
+  // activity is not "available for new enrollment" (see ActivityRecord.active),
+  // so a file referencing one by name is treated the same as an unrecognized
+  // name: the admin must explicitly pick a (necessarily active) replacement.
+  const activityByName = new Map(activities.filter((a) => a.active).map((a) => [a.name.toLowerCase().trim(), a]));
   const activityById = new Map(activities.map((a) => [a.id, a]));
   const rosterByChildId = new Map(roster.map((r) => [r.childId, r]));
   const seenNameKeys = new Set<string>();
@@ -580,4 +669,17 @@ export async function commitRosterImport(rows: RosterImportRow[], weekStart: str
     skippedCount: summary.duplicates + summary.errors,
     byActivity: summary.byActivity,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Operational reset — no extra validation beyond what the Server Action's
+// requireUser("ADMIN") already enforces before this is ever called.
+// ---------------------------------------------------------------------------
+
+export async function getOperationalResetPreview() {
+  return getOperationalResetPreviewRecord();
+}
+
+export async function resetOperationalData(actorId: string) {
+  return resetOperationalDataRecord(actorId);
 }

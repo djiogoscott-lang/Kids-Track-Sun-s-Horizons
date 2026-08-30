@@ -26,12 +26,17 @@ export default async function AdminRosterPage({ searchParams }: { searchParams: 
   const previousWeekStart = shiftDate(weekStart, -7);
   const thisWeekStart = weekBounds(new Date()).weekStart;
 
-  const [activities, roster, allChildren, weekStatus] = await Promise.all([
+  const [allActivities, roster, allChildren, weekStatus] = await Promise.all([
     getActivitiesList(),
     getRosterForWeekView(weekStart),
     listChildrenForAdmin(),
     getRosterWeekStatus(weekStart),
   ]);
+  // Inactive activities are not available for new enrollment — they simply
+  // don't appear here, matching every other "add a participant" surface.
+  // Their roster rows (if any predate deactivation) are managed from
+  // /admin/activities instead, not this weekly view.
+  const activities = allActivities.filter((a) => a.active);
   const activeChildren = allChildren.filter((c) => c.active);
   const totalParticipants = roster.reduce((sum, a) => sum + a.participants.length, 0);
 
