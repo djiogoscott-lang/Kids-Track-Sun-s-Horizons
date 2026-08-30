@@ -1,4 +1,4 @@
-import { Bell, ClipboardCheck, DoorOpen, History, Home, Shuffle, Trophy, Users2 } from "lucide-react";
+import { Bell, ClipboardCheck, ClipboardList, DoorOpen, History, Home, Shuffle, Trophy, Users2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
@@ -15,6 +15,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 
 const ADMIN_LINKS = [
   { href: "/admin/children", label: "Enfants", icon: Users2, tourId: "nav-children" },
+  { href: "/admin/roster", label: "Participants", icon: ClipboardList },
   { href: "/activities", label: "Activités", icon: Trophy },
   { href: "/admin/monitors", label: "Moniteurs", icon: Shuffle, tourId: "nav-monitors" },
   { href: "/admin/presences", label: "Présences", icon: ClipboardCheck, tourId: "nav-presences" },

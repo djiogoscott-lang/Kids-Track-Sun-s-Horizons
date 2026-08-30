@@ -35,6 +35,7 @@ import * as supaDayState from "@/server/supabase/activity-day-state-repo";
 import * as supaNotifications from "@/server/supabase/notifications-repo";
 import * as demoNotifications from "@/server/demo/notifications-store";
 import * as supaMonitors from "@/server/supabase/monitors-repo";
+import * as supaRoster from "@/server/supabase/weekly-roster-repo";
 import { PresenceCommandError } from "@/features/presence/application/errors";
 
 export interface ActivityRecord {
@@ -422,4 +423,55 @@ export async function updateAccountPasswordRecord(userId: string, newPassword: s
     throw new PresenceCommandError("La modification du mot de passe nécessite Supabase.");
   }
   return supaMonitors.updateAccountPassword(userId, newPassword);
+}
+
+// ---------------------------------------------------------------------------
+// Weekly roster — "who is actually attending which activity this week",
+// distinct from the permanent children directory. Demo mode has no concept
+// of a week (its in-memory store has only ever modeled "today"), so it
+// always returns an empty roster — the query layer's own legacy fallback
+// ("no roster row exists for this week -> use every active child assigned to
+// the activity") already gives demo mode exactly its current, correct
+// behavior with zero special-casing here.
+// ---------------------------------------------------------------------------
+
+export { weekBounds } from "@/server/supabase/weekly-roster-repo";
+export type { RosterEntry } from "@/server/supabase/weekly-roster-repo";
+
+export const getRosterForWeek = cache(async (weekStart: string): Promise<supaRoster.RosterEntry[]> => {
+  if (!isSupabaseConfigured) return [];
+  return supaRoster.getRosterForWeek(weekStart);
+});
+
+export async function addToRosterRecord(childId: string, activityId: string, weekStart: string, weekEnd: string, createdBy: string | null): Promise<void> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion du roster nécessite Supabase.");
+  const realCreatedBy = createdBy ? await resolveRealUserId(createdBy) : null;
+  return supaRoster.addToRoster(childId, activityId, weekStart, weekEnd, realCreatedBy);
+}
+
+export async function removeFromRosterRecord(childId: string, weekStart: string): Promise<void> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion du roster nécessite Supabase.");
+  return supaRoster.removeFromRoster(childId, weekStart);
+}
+
+export async function resetRosterForActivityWeekRecord(activityId: string, weekStart: string): Promise<number> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion du roster nécessite Supabase.");
+  return supaRoster.resetRosterForActivityWeek(activityId, weekStart);
+}
+
+export async function duplicateRosterWeekRecord(fromWeekStart: string, toWeekStart: string, toWeekEnd: string, createdBy: string | null): Promise<number> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion du roster nécessite Supabase.");
+  const realCreatedBy = createdBy ? await resolveRealUserId(createdBy) : null;
+  return supaRoster.duplicateRosterWeek(fromWeekStart, toWeekStart, toWeekEnd, realCreatedBy);
+}
+
+export async function bulkAddToRosterRecord(
+  entries: Array<{ childId: string; activityId: string }>,
+  weekStart: string,
+  weekEnd: string,
+  createdBy: string | null,
+): Promise<void> {
+  if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion du roster nécessite Supabase.");
+  const realCreatedBy = createdBy ? await resolveRealUserId(createdBy) : null;
+  return supaRoster.bulkAddToRoster(entries, weekStart, weekEnd, realCreatedBy);
 }

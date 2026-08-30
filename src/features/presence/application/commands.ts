@@ -1,23 +1,30 @@
 import {
   addNotificationRecord,
+  addToRosterRecord,
+  bulkAddToRosterRecord,
   closeDay,
   createAccountRecord,
   createChildRecord,
   deleteChildRecordPermanently,
+  duplicateRosterWeekRecord,
   getActivitiesList,
   getAttendanceMap,
   getChildById,
   getChildrenList,
   getDayState,
   getMonitorsList,
+  getRosterForWeek,
   isMonitorEmailTaken,
   markActivityNotificationsReadData,
+  removeFromRosterRecord,
+  resetRosterForActivityWeekRecord,
   setAttendance,
   setMonitorActiveRecord,
   setMonitorForActivity,
   updateAccountPasswordRecord,
   updateChildRecord,
   updateMonitorNameRecord,
+  weekBounds,
   type ChildRecord,
   type NewChildRecordInput,
 } from "@/server/data-source";
@@ -28,16 +35,42 @@ function emptyRecord(childId: string, activityId: string): PresenceRecord {
   return { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null, daycareManual: false };
 }
 
-/** A child with no attendance row yet is not an error — it's the normal
+/**
+ * A child with no attendance row yet is not an error — it's the normal
  * "not marked today" starting state (real rows only exist once someone
- * actually records something). */
+ * actually records something). Eligibility for a *first* mark today is
+ * roster-based (or the legacy children.activityId check when no roster
+ * exists yet for the week — see resolveEffectiveActivityMap in queries.ts
+ * for the same fallback rule applied to reads). Once a real record already
+ * exists for this activity+date, it is always returned as-is regardless of
+ * any roster change since — a child moved to another activity's roster
+ * mid-day must not suddenly become unmanageable on the activity that
+ * already has their attendance row for today.
+ */
 async function requireRecord(childId: string, activityId: string, now: Date): Promise<PresenceRecord> {
   const child = await getChildById(childId);
-  if (!child || child.activityId !== activityId) {
-    throw new PresenceCommandError("Enfant introuvable pour cette activité.");
-  }
+  if (!child) throw new PresenceCommandError("Enfant introuvable.");
+
   const records = await getAttendanceMap(now, activityId);
-  return records.get(childId) ?? emptyRecord(childId, activityId);
+  const existing = records.get(childId);
+  if (existing) return existing;
+
+  const { weekStart } = weekBounds(now);
+  const roster = await getRosterForWeek(weekStart);
+  const eligible = roster.length === 0 ? child.activityId === activityId && child.active : roster.some((r) => r.childId === childId && r.activityId === activityId);
+  if (!eligible) throw new PresenceCommandError("Enfant introuvable pour cette activité.");
+
+  return emptyRecord(childId, activityId);
+}
+
+/** Same roster-or-legacy-fallback rule as requireRecord/resolveEffectiveActivityMap
+ * (queries.ts), for call sites that resolve one child's activity for this
+ * week rather than validating against an already-known one. */
+async function resolveEffectiveActivityId(child: ChildRecord, now: Date): Promise<string | null> {
+  const { weekStart } = weekBounds(now);
+  const roster = await getRosterForWeek(weekStart);
+  if (roster.length === 0) return child.active ? child.activityId : null;
+  return roster.find((r) => r.childId === child.id)?.activityId ?? null;
 }
 
 export async function markArrived(activityId: string, childId: string, recordedBy: string, now = new Date()) {
@@ -74,20 +107,22 @@ export async function markStillPresent(activityId: string, childId: string, reco
 export async function addChildToDaycare(childId: string, recordedBy: string, now = new Date()) {
   const child = await getChildById(childId);
   if (!child || !child.active) throw new PresenceCommandError("Enfant introuvable ou inactif.");
+  const activityId = await resolveEffectiveActivityId(child, now);
+  if (!activityId) throw new PresenceCommandError("Cet enfant ne fait pas partie du roster de la semaine.");
 
-  const records = await getAttendanceMap(now, child.activityId);
-  const record = records.get(childId) ?? emptyRecord(childId, child.activityId);
+  const records = await getAttendanceMap(now, activityId);
+  const record = records.get(childId) ?? emptyRecord(childId, activityId);
   if (record.left) {
     throw new PresenceCommandError("Cet enfant est déjà parti aujourd'hui et ne peut pas être ajouté à la garderie.");
   }
 
   if (!record.arrived) {
-    await setAttendance(childId, child.activityId, now, { arrived: true, arrivedAt: now, daycareManual: true }, recordedBy);
+    await setAttendance(childId, activityId, now, { arrived: true, arrivedAt: now, daycareManual: true }, recordedBy);
   } else {
-    await setAttendance(childId, child.activityId, now, { daycareManual: true }, recordedBy);
+    await setAttendance(childId, activityId, now, { daycareManual: true }, recordedBy);
   }
 
-  return { activityId: child.activityId };
+  return { activityId };
 }
 
 export async function assignMonitor(activityId: string, monitorId: string) {
@@ -112,9 +147,16 @@ export async function closeActivityDay(activityId: string, closedByUserId: strin
   // Finalize the roll call: once the session is closed there is no more
   // "not yet marked" — anyone still untouched becomes explicitly absent, so
   // a closed day's counters are always real numbers, never a leftover
-  // NOT_MARKED bucket implying the appel is somehow still open.
-  const [children, records] = await Promise.all([getChildrenList(), getAttendanceMap(now, activityId)]);
-  const unmarked = children.filter((c) => c.activityId === activityId && c.active && !records.has(c.id));
+  // NOT_MARKED bucket implying the appel is somehow still open. Scoped to
+  // this week's roster (or the legacy children.activityId fallback when no
+  // roster exists yet) — exactly who the live "à traiter" count showed,
+  // never a child who was already correctly excluded from today's séance.
+  const { weekStart } = weekBounds(now);
+  const [children, records, roster] = await Promise.all([getChildrenList(), getAttendanceMap(now, activityId), getRosterForWeek(weekStart)]);
+  const rosterChildIds = roster.length === 0 ? null : new Set(roster.filter((r) => r.activityId === activityId).map((r) => r.childId));
+  const unmarked = children.filter(
+    (c) => c.active && !records.has(c.id) && (rosterChildIds === null ? c.activityId === activityId : rosterChildIds.has(c.id)),
+  );
   for (const child of unmarked) {
     await setAttendance(child.id, activityId, now, { arrived: false, arrivedAt: null, departed: false, departedAt: null }, closedByUserId);
   }
@@ -278,4 +320,168 @@ export async function updateMonitorPassword(monitorId: string, newPassword: stri
   if (newPassword !== confirmPassword) throw new PresenceCommandError("Les deux mots de passe ne correspondent pas.");
   assertValidPassword(newPassword);
   await updateAccountPasswordRecord(monitorId, newPassword);
+}
+
+// ---------------------------------------------------------------------------
+// Weekly roster — "participants de la semaine". Distinct on purpose from
+// child management above: these commands only ever touch weekly_roster,
+// never public.children — removing someone from a roster is never a
+// substitute for (and can never trigger) deleteChildPermanently.
+// ---------------------------------------------------------------------------
+
+export async function addChildToRoster(childId: string, activityId: string, weekStart: string, addedBy: string) {
+  const [child, activities] = await Promise.all([getChildById(childId), getActivitiesList()]);
+  if (!child || !child.active) throw new PresenceCommandError("Enfant introuvable ou inactif.");
+  if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
+  const { weekStart: normalizedStart, weekEnd } = weekBounds(new Date(`${weekStart}T12:00:00`));
+  await addToRosterRecord(childId, activityId, normalizedStart, weekEnd, addedBy);
+}
+
+export async function removeChildFromRoster(childId: string, weekStart: string) {
+  await removeFromRosterRecord(childId, weekStart);
+}
+
+export interface ResetRosterResult {
+  removedCount: number;
+}
+
+/**
+ * Unlike deleteChildPermanently/bulkDeleteChildren, this never touches
+ * public.children or history — it only removes rows from weekly_roster for
+ * one activity's one week, so a simple confirm/cancel (no typed word) is
+ * enough friction, matching the spec's lighter confirmation for this action.
+ */
+export async function resetRosterForActivityWeek(activityId: string, weekStart: string): Promise<ResetRosterResult> {
+  const activities = await getActivitiesList();
+  if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
+  const removedCount = await resetRosterForActivityWeekRecord(activityId, weekStart);
+  return { removedCount };
+}
+
+/** Never automatic — an explicit admin action that copies last week's
+ * roster forward as a starting point, skipping any child who already has a
+ * row for the target week so it never clobbers an edit already made there. */
+export async function duplicatePreviousWeekRoster(fromWeekStart: string, toWeekStart: string, createdBy: string): Promise<number> {
+  const { weekEnd: toWeekEnd } = weekBounds(new Date(`${toWeekStart}T12:00:00`));
+  return duplicateRosterWeekRecord(fromWeekStart, toWeekStart, toWeekEnd, createdBy);
+}
+
+export interface RosterImportRow {
+  firstName: string;
+  lastName: string;
+  activityName: string;
+  /** Optional free-text date (ISO YYYY-MM-DD or DD/MM/YYYY) — when present,
+   * checked against the target week rather than used to route the row, so a
+   * stale file re-imported into the wrong week is caught instead of
+   * silently accepted. */
+  weekLabel?: string;
+}
+
+export interface RosterImportOutcome {
+  row: RosterImportRow;
+  status: "MATCHED" | "UNKNOWN_CHILD" | "UNKNOWN_ACTIVITY" | "WEEK_MISMATCH" | "DUPLICATE";
+  childId?: string;
+  activityId?: string;
+  message?: string;
+}
+
+function parseWeekLabel(label: string): Date | null {
+  const trimmed = label.trim();
+  if (!trimmed) return null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (iso) return new Date(`${trimmed}T12:00:00`);
+  const fr = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (fr) return new Date(`${fr[3]}-${fr[2].padStart(2, "0")}-${fr[1].padStart(2, "0")}T12:00:00`);
+  return null;
+}
+
+/**
+ * Preview-only: matches each row against known children (by first+last
+ * name, case-insensitive) and activities, without writing anything. Unknown
+ * children are flagged rather than silently skipped or auto-created — the
+ * admin explicitly decides whether to create the profile (commitRosterImport
+ * below, with createUnknownChildren) before anything is written. A row
+ * naming a different week than targetWeekStart is flagged rather than
+ * silently imported into the wrong week; a child appearing twice in the
+ * same file is flagged as a duplicate rather than silently overwritten.
+ */
+export async function previewRosterImport(rows: RosterImportRow[], targetWeekStart: string): Promise<RosterImportOutcome[]> {
+  const [allChildren, activities] = await Promise.all([getChildrenList(), getActivitiesList()]);
+  const childByName = new Map(allChildren.filter((c) => c.active).map((c) => [`${c.firstName} ${c.lastName}`.toLowerCase().trim(), c]));
+  const activityByName = new Map(activities.map((a) => [a.name.toLowerCase().trim(), a]));
+  const { weekStart: normalizedTarget } = weekBounds(new Date(`${targetWeekStart}T12:00:00`));
+  const seenChildIds = new Set<string>();
+
+  return rows.map((row) => {
+    if (row.weekLabel?.trim()) {
+      const parsed = parseWeekLabel(row.weekLabel);
+      const rowWeekStart = parsed ? weekBounds(parsed).weekStart : null;
+      if (!rowWeekStart) return { row, status: "WEEK_MISMATCH" as const, message: `Semaine "${row.weekLabel}" illisible.` };
+      if (rowWeekStart !== normalizedTarget) {
+        return { row, status: "WEEK_MISMATCH" as const, message: `Cette ligne concerne la semaine du ${rowWeekStart}, pas celle importée (${normalizedTarget}).` };
+      }
+    }
+    const activity = activityByName.get(row.activityName.toLowerCase().trim());
+    if (!activity) return { row, status: "UNKNOWN_ACTIVITY" as const };
+    const child = childByName.get(`${row.firstName} ${row.lastName}`.toLowerCase().trim());
+    if (!child) return { row, status: "UNKNOWN_CHILD" as const, activityId: activity.id };
+    if (seenChildIds.has(child.id)) {
+      return { row, status: "DUPLICATE" as const, childId: child.id, activityId: activity.id, message: "Cet enfant apparaît plusieurs fois dans ce fichier." };
+    }
+    seenChildIds.add(child.id);
+    return { row, status: "MATCHED" as const, childId: child.id, activityId: activity.id };
+  });
+}
+
+export interface CommitRosterImportResult {
+  addedCount: number;
+  createdChildrenCount: number;
+  skippedCount: number;
+}
+
+/**
+ * Re-validates from scratch server-side (never trusts the client's echoed
+ * preview) — same discipline as commitChildrenImport. createUnknownChildren
+ * opts into creating a permanent profile for a row with no existing match;
+ * without it, unknown-child rows are silently skipped and counted.
+ */
+export async function commitRosterImport(
+  rows: RosterImportRow[],
+  weekStart: string,
+  createUnknownChildren: boolean,
+  actingUserId: string,
+): Promise<CommitRosterImportResult> {
+  const outcomes = await previewRosterImport(rows, weekStart);
+  const { weekStart: normalizedStart, weekEnd } = weekBounds(new Date(`${weekStart}T12:00:00`));
+
+  let createdChildrenCount = 0;
+  let skippedCount = 0;
+  const entries: Array<{ childId: string; activityId: string }> = [];
+
+  for (const outcome of outcomes) {
+    if (outcome.status === "UNKNOWN_ACTIVITY" || outcome.status === "WEEK_MISMATCH" || outcome.status === "DUPLICATE") {
+      skippedCount++;
+      continue;
+    }
+    if (outcome.status === "UNKNOWN_CHILD") {
+      if (!createUnknownChildren) {
+        skippedCount++;
+        continue;
+      }
+      const created = await createChildRecord({
+        firstName: outcome.row.firstName.trim(),
+        lastName: outcome.row.lastName.trim(),
+        activityId: outcome.activityId!,
+        daycareAuto: false,
+        notes: "",
+      });
+      createdChildrenCount++;
+      entries.push({ childId: created.id, activityId: outcome.activityId! });
+      continue;
+    }
+    entries.push({ childId: outcome.childId!, activityId: outcome.activityId! });
+  }
+
+  await bulkAddToRosterRecord(entries, normalizedStart, weekEnd, actingUserId);
+  return { addedCount: entries.length, createdChildrenCount, skippedCount };
 }

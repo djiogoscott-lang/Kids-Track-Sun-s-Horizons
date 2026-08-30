@@ -18,7 +18,7 @@ export default async function GarderiePage() {
   const activityId = user.role === "MONITOR" ? (await getActivityIdForMonitor(user.id)) ?? undefined : undefined;
   const [children, pickerChildren] = await Promise.all([
     getDaycareList(now, activityId),
-    listChildrenForDaycarePicker(activityId),
+    listChildrenForDaycarePicker(activityId, now),
   ]);
 
   return (

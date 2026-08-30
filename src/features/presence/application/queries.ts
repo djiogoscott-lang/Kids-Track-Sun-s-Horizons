@@ -9,7 +9,10 @@ import {
   getMonitorsForAdminList,
   getMonitorsList,
   getNotificationsForActivityData,
+  getRosterForWeek,
   getUnreadCountForActivityData,
+  weekBounds,
+  type ChildRecord,
   type MonitorAdminRecord,
   type NotificationRecord,
 } from "@/server/data-source";
@@ -19,6 +22,56 @@ import type { EveningStatus, MorningStatus } from "@/features/presence/domain/ty
 
 function emptyRecord(childId: string, activityId: string): PresenceRecord {
   return { childId, activityId, arrived: false, arrivedAt: null, left: false, leftAt: null, daycareManual: false };
+}
+
+/**
+ * Maps each active child to the activity they effectively belong to for the
+ * week containing `date`. If a roster has been built for that week (any
+ * activity — see below), it is authoritative and children.activityId is
+ * ignored: a roster row's activityId is what actually places a child in
+ * this week's session, so a child can move activities week to week without
+ * touching their permanent profile. If NO roster row exists anywhere for
+ * that week — every date before this feature shipped, or a future week
+ * nobody has built yet — this falls back to the legacy rule
+ * (children.activityId + active), so existing history and any week the
+ * admin hasn't gotten to yet keep working exactly as before rather than
+ * silently showing zero children.
+ *
+ * The "any activity" check (not "this activity") matters: once the org has
+ * started managing rosters for a week, every activity for that week should
+ * behave in roster-mode, including one with a genuinely empty roster (0
+ * participants is a real, correct answer once rosters are in use) — mixing
+ * roster-mode and legacy-mode per-activity within the same week would be
+ * confusing and inconsistent.
+ */
+async function resolveEffectiveActivityMap(allChildren: ChildRecord[], date: Date): Promise<Map<string, string>> {
+  const { weekStart } = weekBounds(date);
+  const roster = await getRosterForWeek(weekStart);
+  if (roster.length === 0) {
+    return new Map(allChildren.filter((c) => c.active).map((c) => [c.id, c.activityId]));
+  }
+  return new Map(roster.map((r) => [r.childId, r.activityId]));
+}
+
+async function resolveRosterChildren(activityId: string, allChildren: ChildRecord[], date: Date): Promise<ChildRecord[]> {
+  const effectiveActivity = await resolveEffectiveActivityMap(allChildren, date);
+  return allChildren.filter((c) => c.active && effectiveActivity.get(c.id) === activityId);
+}
+
+/**
+ * Single-child version of resolveEffectiveActivityMap, for call sites (write
+ * actions) that need one child's real activity for this week rather than
+ * the whole roster. Returns null once roster-mode is active for the week
+ * and this child simply isn't on any roster — "not currently eligible
+ * anywhere", not "fall back to their old activity".
+ */
+export async function getEffectiveActivityIdForChild(childId: string, date = new Date()): Promise<string | null> {
+  const child = await getChildById(childId);
+  if (!child) return null;
+  const { weekStart } = weekBounds(date);
+  const roster = await getRosterForWeek(weekStart);
+  if (roster.length === 0) return child.active ? child.activityId : null;
+  return roster.find((r) => r.childId === childId)?.activityId ?? null;
 }
 
 /**
@@ -57,7 +110,7 @@ export async function listActivitiesOverview(now = new Date()): Promise<Activity
 
   return Promise.all(
     activities.map(async (activity) => {
-      const children = allChildren.filter((c) => c.activityId === activity.id && c.active);
+      const children = await resolveRosterChildren(activity.id, allChildren, now);
       const statuses = children.map((c) => morningStatus(records.get(c.id)));
       const dayState = await getDayState(activity.id, now);
       return {
@@ -143,9 +196,8 @@ export async function getActivityDetail(activityId: string, now = new Date()): P
   const activity = activities.find((a) => a.id === activityId);
   if (!activity) return null;
 
-  const dayState = await getDayState(activityId, now);
-  const [records, allChildren] = await Promise.all([getAttendanceMap(now, activityId), getChildrenList()]);
-  const children = sortByName(allChildren.filter((c) => c.activityId === activityId && c.active));
+  const [dayState, records, allChildren] = await Promise.all([getDayState(activityId, now), getAttendanceMap(now, activityId), getChildrenList()]);
+  const children = sortByName(await resolveRosterChildren(activityId, allChildren, now));
 
   const morningList: ChildMorningRow[] = children.map((child) => {
     return { childId: child.id, firstName: child.firstName, lastName: child.lastName, status: morningStatus(records.get(child.id)) };
@@ -244,17 +296,21 @@ export async function getDaycareList(now = new Date(), activityId?: string): Pro
     getActivitiesList(),
     getDayStatesForDate(now),
   ]);
+  const childById = new Map(allChildren.map((c) => [c.id, c]));
   const rows: DaycareRow[] = [];
 
-  for (const child of allChildren) {
-    if (!child.active) continue;
-    if (activityId && child.activityId !== activityId) continue;
-    const record = records.get(child.id);
-    if (!record) continue;
-    const activity = activities.find((a) => a.id === child.activityId);
+  // Keyed off the attendance record's own activityId, not children.activityId
+  // — now that the weekly roster can place a child under a different
+  // activity than their permanent reference one, record.activityId is the
+  // one they were actually marked under today, and is what a monitor's own
+  // Garderie view must match against.
+  for (const [childId, record] of records) {
+    const child = childById.get(childId);
+    if (!child || !child.active) continue;
+    const activity = activities.find((a) => a.id === record.activityId);
     if (!activity) continue;
 
-    const closed = dayStates.get(child.activityId)?.closed ?? false;
+    const closed = dayStates.get(record.activityId)?.closed ?? false;
     const reason = daycareReason(record, child.daycareAuto, closed, now);
     if (reason) {
       rows.push({
@@ -281,23 +337,30 @@ export interface ChildPickerRow {
 }
 
 /**
- * Backs the Garderie "+ Ajouter un enfant" search: an admin can pick from
- * every active child, a monitor only from their own activity's — same scope
- * getDaycareList itself already enforces, so the picker never even shows a
- * child the add action would go on to reject server-side anyway.
+ * Backs the Garderie "+ Ajouter un enfant" search: built from this week's
+ * roster (an admin sees every activity's roster, a monitor only their own —
+ * same scope getDaycareList itself already enforces), so the picker never
+ * even shows a child the add action would go on to reject server-side
+ * anyway, and never offers a child who isn't actually part of this week.
  */
-export async function listChildrenForDaycarePicker(activityId?: string): Promise<ChildPickerRow[]> {
+export async function listChildrenForDaycarePicker(activityId?: string, now = new Date()): Promise<ChildPickerRow[]> {
   const [allChildren, activities] = await Promise.all([getChildrenList(), getActivitiesList()]);
+  const effectiveActivity = await resolveEffectiveActivityMap(allChildren, now);
   const activityById = new Map(activities.map((a) => [a.id, a.name]));
   return sortByName(
     allChildren
-      .filter((c) => c.active && (!activityId || c.activityId === activityId))
+      .filter((c) => {
+        if (!c.active) return false;
+        const effective = effectiveActivity.get(c.id);
+        if (!effective) return false;
+        return !activityId || effective === activityId;
+      })
       .map((c) => ({
         id: c.id,
         firstName: c.firstName,
         lastName: c.lastName,
-        activityId: c.activityId,
-        activityName: activityById.get(c.activityId) ?? "Activité",
+        activityId: effectiveActivity.get(c.id)!,
+        activityName: activityById.get(effectiveActivity.get(c.id)!) ?? "Activité",
       })),
   );
 }
@@ -347,4 +410,37 @@ export async function getChildForAdmin(childId: string): Promise<ChildAdminRow |
   const [child, activities] = await Promise.all([getChildById(childId), getActivitiesList()]);
   if (!child) return null;
   return { ...child, activityName: activities.find((a) => a.id === child.activityId)?.name ?? "Activité" };
+}
+
+// ---------------------------------------------------------------------------
+// Weekly roster — admin management view ("Participants de la semaine").
+// ---------------------------------------------------------------------------
+
+export interface RosterParticipant {
+  childId: string;
+  firstName: string;
+  lastName: string;
+}
+
+export interface RosterByActivity {
+  activityId: string;
+  activityName: string;
+  participants: RosterParticipant[];
+}
+
+export async function getRosterForWeekView(weekStart: string): Promise<RosterByActivity[]> {
+  const [roster, allChildren, activities] = await Promise.all([getRosterForWeek(weekStart), getChildrenList(), getActivitiesList()]);
+  const childById = new Map(allChildren.map((c) => [c.id, c]));
+  const byActivity = new Map<string, RosterParticipant[]>();
+  for (const entry of roster) {
+    const child = childById.get(entry.childId);
+    if (!child) continue;
+    if (!byActivity.has(entry.activityId)) byActivity.set(entry.activityId, []);
+    byActivity.get(entry.activityId)!.push({ childId: child.id, firstName: child.firstName, lastName: child.lastName });
+  }
+  return activities.map((a) => ({
+    activityId: a.id,
+    activityName: a.name,
+    participants: sortByName(byActivity.get(a.id) ?? []),
+  }));
 }

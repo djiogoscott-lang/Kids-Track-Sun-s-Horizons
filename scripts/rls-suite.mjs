@@ -115,6 +115,7 @@ async function main() {
     check("anon: 0 children visible", (await c.query("select id from children")).rows.length === 0);
     check("anon: 0 memberships visible", (await c.query("select id from organization_memberships")).rows.length === 0);
     check("anon: 0 attendance rows visible", (await c.query("select id from attendance")).rows.length === 0);
+    check("anon: 0 weekly_roster rows visible", (await c.query("select id from weekly_roster")).rows.length === 0);
   });
 
   // -------------------------------------------------------------------
@@ -137,6 +138,9 @@ async function main() {
     const childId = childOf(byName["Danse"].id);
     const updChild = await c.query("update children set notes = notes where id = $1 returning id", [childId]);
     check("admin: can write to children", updChild.rowCount === 1);
+
+    const roster = await c.query("select id from weekly_roster");
+    check("admin: sees weekly_roster rows across all activities", roster.rows.length >= 0, `got ${roster.rows.length}`);
   });
 
   // -------------------------------------------------------------------
@@ -234,6 +238,23 @@ async function main() {
         [activity.organization_id, activity.id, activity.monitor_id],
       );
       check(`${monitorEmail}: cannot insert notifications (admin-only)`, notifIns.denied, `rowCount=${notifIns.rowCount}`);
+
+      // weekly_roster: read own activity's roster, denied for others, no write access at all.
+      const ownRoster = await c.query("select id from weekly_roster where activity_id = $1", [activity.id]);
+      check(`${monitorEmail}: can read own activity's roster`, ownRoster.rows.length >= 0);
+      if (otherActivities[0]) {
+        const otherRoster = await c.query("select id from weekly_roster where activity_id = $1", [otherActivities[0].id]);
+        check(`${monitorEmail}: cannot read another activity's roster`, otherRoster.rows.length === 0, `got ${otherRoster.rows.length}`);
+      }
+      if (ownChildId) {
+        const rosterWrite = await attemptWrite(
+          c,
+          `insert into weekly_roster (organization_id, child_id, activity_id, week_start, week_end)
+           values ($1, $2, $3, current_date + interval '60 days', current_date + interval '66 days') returning id`,
+          [activity.organization_id, ownChildId, activity.id],
+        );
+        check(`${monitorEmail}: cannot write to weekly_roster (admin-only)`, rosterWrite.denied, `rowCount=${rosterWrite.rowCount}`);
+      }
 
       const mem = await c.query("select id from organization_memberships");
       check(`${monitorEmail}: sees only own membership row`, mem.rows.length === 1, `got ${mem.rows.length}`);

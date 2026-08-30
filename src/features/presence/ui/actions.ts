@@ -3,17 +3,21 @@
 import { revalidatePath } from "next/cache";
 import {
   addChildToDaycare,
+  addChildToRoster,
   assignMonitor,
   bulkDeleteChildren,
   closeActivityDay,
   createAccount,
   createChild,
   deleteChildPermanently,
+  duplicatePreviousWeekRoster,
   markAbsent,
   markArrived,
   markLeft,
   markNotificationsRead,
   markStillPresent,
+  removeChildFromRoster,
+  resetRosterForActivityWeek,
   sendNotification,
   setChildActive,
   setMonitorActive,
@@ -22,7 +26,7 @@ import {
   updateMonitorPassword,
   type UpdateChildInput,
 } from "@/features/presence/application/commands";
-import { getActivityDetail, getActivityIdForMonitor, getChildForAdmin } from "@/features/presence/application/queries";
+import { getActivityDetail, getActivityIdForMonitor, getEffectiveActivityIdForChild } from "@/features/presence/application/queries";
 import { PresenceCommandError } from "@/features/presence/application/errors";
 import { requireUser } from "@/lib/auth/require-user";
 import { publishActivityUpdate } from "@/server/demo/notifications-store";
@@ -106,18 +110,21 @@ export async function markGoneFromDaycareAction(activityId: string, childId: str
 
 /**
  * The client only ever sends a childId, never an activityId — the child's
- * real activity is looked up here and is what assertActivityAccess checks a
- * monitor against, so a monitor can never smuggle in another activity's
- * child by any client-side means.
+ * real activity for THIS WEEK (roster-resolved, not their permanent
+ * children.activityId reference) is looked up here and is what
+ * assertActivityAccess checks a monitor against, so a monitor can never
+ * smuggle in another activity's child by any client-side means, and a child
+ * moved to a different activity's roster this week is authorized against
+ * their current roster activity, not a stale one.
  */
 export async function addChildToDaycareAction(childId: string): Promise<ActionResult> {
-  const child = await getChildForAdmin(childId);
-  if (!child) return { ok: false, message: "Enfant introuvable." };
+  const effectiveActivityId = await getEffectiveActivityIdForChild(childId);
+  if (!effectiveActivityId) return { ok: false, message: "Cet enfant ne fait pas partie du roster de la semaine." };
   const result = await toResult(async () => {
-    const user = await assertActivityAccess(child.activityId);
+    const user = await assertActivityAccess(effectiveActivityId);
     await addChildToDaycare(childId, user.id);
   });
-  revalidateActivityViews(child.activityId);
+  revalidateActivityViews(effectiveActivityId);
   return result;
 }
 
@@ -270,4 +277,61 @@ export async function markNotificationsReadAction(): Promise<ActionResult> {
   await markNotificationsRead(activityId);
   revalidatePath("/notifications");
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Weekly roster — admin-only ("Aucun moniteur ne peut modifier le roster
+// global."), and always revalidates the live activity views since a roster
+// change immediately changes who appears in today's séance.
+// ---------------------------------------------------------------------------
+
+function revalidateRosterViews() {
+  revalidatePath("/admin/roster");
+  revalidatePath("/activities");
+  revalidatePath("/admin/presences");
+  revalidatePath("/garderie");
+}
+
+export async function addChildToRosterAction(childId: string, activityId: string, weekStart: string): Promise<ActionResult> {
+  const admin = await requireUser("ADMIN");
+  const result = await toResult(() => addChildToRoster(childId, activityId, weekStart, admin.id));
+  revalidateRosterViews();
+  return result;
+}
+
+export async function removeChildFromRosterAction(childId: string, weekStart: string): Promise<ActionResult> {
+  await requireUser("ADMIN");
+  const result = await toResult(() => removeChildFromRoster(childId, weekStart));
+  revalidateRosterViews();
+  return result;
+}
+
+export type ResetRosterActionResult = { ok: true; removedCount: number } | { ok: false; message: string };
+
+export async function resetRosterForActivityWeekAction(activityId: string, weekStart: string): Promise<ResetRosterActionResult> {
+  await requireUser("ADMIN");
+  try {
+    const { removedCount } = await resetRosterForActivityWeek(activityId, weekStart);
+    revalidateRosterViews();
+    return { ok: true, removedCount };
+  } catch (error) {
+    if (error instanceof PresenceCommandError) return { ok: false, message: error.message };
+    console.error("Unexpected error resetting roster:", error);
+    return { ok: false, message: "Une erreur est survenue. Veuillez réessayer." };
+  }
+}
+
+export type DuplicateWeekActionResult = { ok: true; addedCount: number } | { ok: false; message: string };
+
+export async function duplicatePreviousWeekAction(fromWeekStart: string, toWeekStart: string): Promise<DuplicateWeekActionResult> {
+  const admin = await requireUser("ADMIN");
+  try {
+    const addedCount = await duplicatePreviousWeekRoster(fromWeekStart, toWeekStart, admin.id);
+    revalidateRosterViews();
+    return { ok: true, addedCount };
+  } catch (error) {
+    if (error instanceof PresenceCommandError) return { ok: false, message: error.message };
+    console.error("Unexpected error duplicating roster week:", error);
+    return { ok: false, message: "Une erreur est survenue. Veuillez réessayer." };
+  }
 }
