@@ -188,8 +188,17 @@ async function main() {
       console.log("  (skipped cross-school children checks — only one school exists)");
     }
 
+    // Scoped to the schools this admin actually administers, not the global
+    // count. Comparing against every membership row in the database asserted
+    // that an admin SHOULD see other schools' members — the exact leak this
+    // suite exists to catch. It only passed while one school existed.
+    const adminMemberships = memberships.filter((m) => adminSchoolIds.has(m.organization_id));
     const mem = await c.query("select id from organization_memberships");
-    check("admin: sees all memberships", mem.rows.length === memberships.length, `got ${mem.rows.length}, expected ${memberships.length}`);
+    check(
+      "admin: sees exactly their own school(s)' memberships",
+      mem.rows.length === adminMemberships.length,
+      `got ${mem.rows.length}, expected ${adminMemberships.length}`,
+    );
 
     const upd = await c.query("update activities set name = name where id = $1 returning id", [anyActivity.id]);
     check("admin: can write to activities", upd.rowCount === 1);
@@ -384,8 +393,17 @@ async function main() {
         check(`${monitorEmail}: cannot write to weekly_roster (admin-only)`, rosterWrite.denied, `rowCount=${rosterWrite.rowCount}`);
       }
 
-      const mem = await c.query("select id from organization_memberships");
-      check(`${monitorEmail}: sees only own membership row`, mem.rows.length === 1, `got ${mem.rows.length}`);
+      // A monitor may legitimately belong to several schools (that is what
+      // the school switcher reads), so the count is "their own rows", not
+      // "one row". What must never happen is seeing somebody else's — which
+      // is asserted directly rather than inferred from a total.
+      const ownMemberships = memberships.filter((m) => m.user_id === activity.monitor_id);
+      const mem = await c.query("select id, user_id from organization_memberships");
+      check(
+        `${monitorEmail}: sees only their own membership rows`,
+        mem.rows.length === ownMemberships.length && mem.rows.every((r) => r.user_id === activity.monitor_id),
+        `got ${mem.rows.length}, expected ${ownMemberships.length}`,
+      );
     });
   }
 

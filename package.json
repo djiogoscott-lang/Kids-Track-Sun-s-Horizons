@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rls": "node scripts/rls-suite.mjs"
+    "test:rls": "node scripts/rls-suite.mjs",
+    "audit:db": "node scripts/db-audit.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "latest",

@@ -190,14 +190,19 @@ export async function bulkDeleteChildrenPermanently(childIds: string[]): Promise
 
 /**
  * Physical deletion, not deactivation. attendance.child_id is ON DELETE
- * RESTRICT, but every child gets an empty placeholder attendance row the
- * moment they're created (see createChild() in commands.ts) — arrived and
- * departed both false, nothing ever actually happened. Relying on the raw
- * FK error would block deletion of every child ever added normally, which
- * is not "has history", it's "exists". Real history is a row where the
- * child actually arrived or departed at least once; only those block
- * deletion. Empty placeholder rows are deleted as part of this operation —
- * they carry no information worth protecting.
+ * RESTRICT, so any attendance row at all would block the delete.
+ *
+ * A child can hold a row where arrived and departed are both false without
+ * anything having happened to them today — a monitor who marks a child
+ * absent and then undoes it leaves exactly that. Relying on the raw FK error
+ * would refuse to delete them, which is not "has history". Real history is a
+ * row where the child actually arrived or departed at least once; only those
+ * block deletion. Rows with neither are removed as part of this operation.
+ *
+ * Note this is NOT a placeholder-seeding scheme: creating a child writes no
+ * attendance row at all, deliberately, because "no row for (child, date)" is
+ * what distinguishes NOT_MARKED from an explicit absence (see morningStatus
+ * in domain/types.ts and createChild in commands.ts).
  */
 export async function deleteChildPermanently(childId: string): Promise<void> {
   const supabase = getServiceRoleClient();
