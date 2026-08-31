@@ -37,6 +37,7 @@ import {
   weekBounds,
   type ActivityRecord,
   type ChildRecord,
+  type KnownAttendanceState,
   type NewChildRecordInput,
 } from "@/server/data-source";
 import type { PresenceRecord } from "@/features/presence/domain/types";
@@ -60,20 +61,40 @@ function emptyRecord(childId: string, activityId: string): PresenceRecord {
  * mid-day must not suddenly become unmanageable on the activity that
  * already has their attendance row for today.
  */
-async function requireRecord(childId: string, activityId: string, now: Date): Promise<PresenceRecord> {
-  const child = await getChildById(childId);
+interface ResolvedRecord {
+  /** The child's state for this activity+date, or an empty record when they
+   * have none yet today. */
+  record: PresenceRecord;
+  /** True when `record` came from a row that actually exists in the
+   * database, false when it is the synthetic empty one. Lets the caller's
+   * write skip re-reading a row this function already resolved. */
+  exists: boolean;
+}
+
+/**
+ * The three reads are independent, so they run concurrently: this sits on
+ * the critical path of every Arrivé/Absent/Parti tap, and issuing them one
+ * after another made each tap wait out three sequential Supabase round
+ * trips before the write even started. getRosterForWeek is only *needed*
+ * when no record exists yet, but fetching it alongside the others costs no
+ * extra wall-clock time and it is request-cached anyway.
+ */
+async function resolveRecord(childId: string, activityId: string, now: Date): Promise<ResolvedRecord> {
+  const { weekStart } = weekBounds(now);
+  const [child, records, roster] = await Promise.all([
+    getChildById(childId),
+    getAttendanceMap(now, activityId),
+    getRosterForWeek(weekStart),
+  ]);
   if (!child) throw new PresenceCommandError("Enfant introuvable.");
 
-  const records = await getAttendanceMap(now, activityId);
   const existing = records.get(childId);
-  if (existing) return existing;
+  if (existing) return { record: existing, exists: true };
 
-  const { weekStart } = weekBounds(now);
-  const roster = await getRosterForWeek(weekStart);
   const eligible = roster.length === 0 ? child.activityId === activityId && child.active : roster.some((r) => r.childId === childId && r.activityId === activityId);
   if (!eligible) throw new PresenceCommandError("Enfant introuvable pour cette activité.");
 
-  return emptyRecord(childId, activityId);
+  return { record: emptyRecord(childId, activityId), exists: false };
 }
 
 /** Same roster-or-legacy-fallback rule as requireRecord/resolveEffectiveActivityMap
@@ -86,26 +107,45 @@ async function resolveEffectiveActivityId(child: ChildRecord, now: Date): Promis
   return roster.find((r) => r.childId === child.id)?.activityId ?? null;
 }
 
+/** The state resolveRecord() just read, in the shape setAttendance wants, so
+ * the write does not re-read the same row. */
+function knownState(record: PresenceRecord): KnownAttendanceState {
+  return {
+    arrived: record.arrived,
+    arrivedAt: record.arrivedAt,
+    departed: record.left,
+    departedAt: record.leftAt,
+    daycareManual: record.daycareManual,
+  };
+}
+
 export async function markArrived(activityId: string, childId: string, recordedBy: string, now = new Date()) {
-  await requireRecord(childId, activityId, now);
-  await setAttendance(childId, activityId, now, { arrived: true, arrivedAt: now }, recordedBy);
+  const { record } = await resolveRecord(childId, activityId, now);
+  await setAttendance(childId, activityId, now, { arrived: true, arrivedAt: now }, recordedBy, knownState(record));
 }
 
 /** Marking a child absent also clears any departure: an absent child cannot have "left". */
 export async function markAbsent(activityId: string, childId: string, recordedBy: string, now = new Date()) {
-  await requireRecord(childId, activityId, now);
-  await setAttendance(childId, activityId, now, { arrived: false, arrivedAt: null, departed: false, departedAt: null }, recordedBy);
+  const { record } = await resolveRecord(childId, activityId, now);
+  await setAttendance(
+    childId,
+    activityId,
+    now,
+    { arrived: false, arrivedAt: null, departed: false, departedAt: null },
+    recordedBy,
+    knownState(record),
+  );
 }
 
 export async function markLeft(activityId: string, childId: string, recordedBy: string, now = new Date()) {
-  const record = await requireRecord(childId, activityId, now);
+  const { record } = await resolveRecord(childId, activityId, now);
   if (!record.arrived) throw new PresenceCommandError("Un enfant absent ne peut pas être marqué parti.");
-  await setAttendance(childId, activityId, now, { departed: true, departedAt: now }, recordedBy);
+  await setAttendance(childId, activityId, now, { departed: true, departedAt: now }, recordedBy, knownState(record));
 }
 
 export async function markStillPresent(activityId: string, childId: string, recordedBy: string, now = new Date()) {
-  await requireRecord(childId, activityId, now);
-  await setAttendance(childId, activityId, now, { departed: false, departedAt: null }, recordedBy);
+  const { record } = await resolveRecord(childId, activityId, now);
+  await setAttendance(childId, activityId, now, { departed: false, departedAt: null }, recordedBy, knownState(record));
 }
 
 /**

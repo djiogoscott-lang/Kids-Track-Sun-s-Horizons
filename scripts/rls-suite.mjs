@@ -123,8 +123,16 @@ async function main() {
   // 2. ADMIN = accès global
   // -------------------------------------------------------------------
   await asUser(client, admin.user_id, async (c) => {
+    // Compared against the real count read with service-role visibility at
+    // setup, not a hardcoded 4: the admin can create activities, so pinning
+    // the number here made the suite fail the moment anyone legitimately
+    // added one. What matters is that the admin sees *every* activity.
     const acts = await c.query("select id from activities");
-    check("admin: sees all 4 activities", acts.rows.length === 4, `got ${acts.rows.length}`);
+    check(
+      `admin: sees all ${activities.length} activities`,
+      acts.rows.length === activities.length,
+      `got ${acts.rows.length}, expected ${activities.length}`,
+    );
 
     const kids = await c.query("select id from children where active");
     const totalKids = Object.values(countByActivity).reduce((a, b) => a + b, 0);

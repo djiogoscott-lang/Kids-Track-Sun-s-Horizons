@@ -15,11 +15,32 @@ export default async function GarderiePage() {
   // an admin needs (and gets) the cross-activity view. The same scope feeds
   // both the daycare list and the "+ Ajouter un enfant" picker, so a monitor
   // is never even shown another activity's child to pick from.
-  const activityId = user.role === "MONITOR" ? (await getActivityIdForMonitor(user.id)) ?? undefined : undefined;
-  const [children, pickerChildren] = await Promise.all([
-    getDaycareList(now, activityId),
-    listChildrenForDaycarePicker(activityId, now),
-  ]);
+  const monitorActivityId = user.role === "MONITOR" ? await getActivityIdForMonitor(user.id) : null;
+  // A monitor with no activity assigned must see nothing at all. Passing
+  // `undefined` here would mean "no filter", which is the admin's
+  // cross-activity view — so an unassigned monitor used to be shown every
+  // activity's children, the exact opposite of the intended scoping.
+  const unassignedMonitor = user.role === "MONITOR" && !monitorActivityId;
+
+  const [children, pickerChildren] = unassignedMonitor
+    ? [[], []]
+    : await Promise.all([
+        getDaycareList(now, monitorActivityId ?? undefined),
+        listChildrenForDaycarePicker(monitorActivityId ?? undefined, now),
+      ]);
+
+  if (unassignedMonitor) {
+    return (
+      <div className="animate-float-in space-y-6">
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-[var(--foreground)] sm:text-3xl">Garderie</h1>
+        <EmptyState
+          icon="🔒"
+          title="Aucune activité ne vous est attribuée."
+          description="Contactez un administrateur pour qu'il vous attribue une activité."
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="animate-float-in space-y-6">

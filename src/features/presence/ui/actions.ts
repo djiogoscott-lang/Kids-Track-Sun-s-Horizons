@@ -66,6 +66,27 @@ async function toResult(fn: () => Promise<unknown>): Promise<ActionResult> {
   }
 }
 
+/**
+ * Runs an activity-scoped mutation with the access check *inside* the error
+ * boundary. Calling assertActivityAccess() before toResult() (as these
+ * actions used to) let its PresenceCommandError escape as an unhandled
+ * Server Action rejection — the client got a thrown error instead of
+ * { ok: false, message }, so a denial surfaced as a generic crash rather
+ * than "Vous n'avez pas accès à cette activité."
+ *
+ * Revalidation only runs on success: there is nothing to refresh when the
+ * call was refused, and re-rendering every presence view on a denied
+ * request would be pure waste.
+ */
+async function withActivityAccess(activityId: string, fn: (userId: string) => Promise<unknown>): Promise<ActionResult> {
+  const result = await toResult(async () => {
+    const user = await assertActivityAccess(activityId);
+    await fn(user.id);
+  });
+  if (result.ok) revalidateActivityViews(activityId);
+  return result;
+}
+
 function revalidateActivityViews(activityId: string) {
   revalidatePath(`/activities/${activityId}`);
   revalidatePath("/activities");
@@ -78,43 +99,37 @@ function revalidateActivityViews(activityId: string) {
 }
 
 export async function markArrivedAction(activityId: string, childId: string): Promise<ActionResult> {
-  const user = await assertActivityAccess(activityId);
-  const result = await toResult(() => markArrived(activityId, childId, user.id));
-  revalidateActivityViews(activityId);
-  return result;
+  return withActivityAccess(activityId, (userId) => markArrived(activityId, childId, userId));
 }
 
 export async function markAbsentAction(activityId: string, childId: string): Promise<ActionResult> {
-  const user = await assertActivityAccess(activityId);
-  const result = await toResult(() => markAbsent(activityId, childId, user.id));
-  revalidateActivityViews(activityId);
-  return result;
+  return withActivityAccess(activityId, (userId) => markAbsent(activityId, childId, userId));
 }
 
 export async function markLeftAction(activityId: string, childId: string): Promise<ActionResult> {
-  const user = await assertActivityAccess(activityId);
-  const result = await toResult(() => markLeft(activityId, childId, user.id));
-  revalidateActivityViews(activityId);
-  return result;
+  return withActivityAccess(activityId, (userId) => markLeft(activityId, childId, userId));
 }
 
 export async function markStillPresentAction(activityId: string, childId: string): Promise<ActionResult> {
-  const user = await assertActivityAccess(activityId);
-  const result = await toResult(() => markStillPresent(activityId, childId, user.id));
-  revalidateActivityViews(activityId);
-  return result;
+  return withActivityAccess(activityId, (userId) => markStillPresent(activityId, childId, userId));
 }
 
 /**
- * Garderie is shared across activities (any monitor may be covering it), so
- * unlike the actions above this only requires being signed in, not owning
- * the child's activity.
+ * Scoped exactly like the roll-call actions. This previously took only
+ * requireUser() on the theory that Garderie is shared across activities —
+ * but the Garderie page itself scopes a monitor to their own activity
+ * (see garderie/page.tsx), so that reasoning never matched the product:
+ * a monitor could not *see* another activity's child here, yet could still
+ * mark one departed by invoking this action directly with a crafted
+ * activityId. requireRecord() only validates that the child belongs to the
+ * activity, not that the caller does, so nothing else caught it.
+ *
+ * Admins are unaffected (assertActivityAccess lets any admin through), and
+ * no legitimate monitor flow changes, since the UI only ever offers them
+ * their own activity's children.
  */
 export async function markGoneFromDaycareAction(activityId: string, childId: string): Promise<ActionResult> {
-  const user = await requireUser();
-  const result = await toResult(() => markLeft(activityId, childId, user.id));
-  revalidateActivityViews(activityId);
-  return result;
+  return withActivityAccess(activityId, (userId) => markLeft(activityId, childId, userId));
 }
 
 /**
@@ -127,14 +142,13 @@ export async function markGoneFromDaycareAction(activityId: string, childId: str
  * their current roster activity, not a stale one.
  */
 export async function addChildToDaycareAction(childId: string): Promise<ActionResult> {
+  // Authenticate before touching the database: resolving the child's
+  // activity is a real query, and an unauthenticated caller should never
+  // make the server do it.
+  await requireUser();
   const effectiveActivityId = await getEffectiveActivityIdForChild(childId);
   if (!effectiveActivityId) return { ok: false, message: "Cet enfant ne fait pas partie du roster de la semaine." };
-  const result = await toResult(async () => {
-    const user = await assertActivityAccess(effectiveActivityId);
-    await addChildToDaycare(childId, user.id);
-  });
-  revalidateActivityViews(effectiveActivityId);
-  return result;
+  return withActivityAccess(effectiveActivityId, (userId) => addChildToDaycare(childId, userId));
 }
 
 export type NewSessionCheckResult =
@@ -162,9 +176,11 @@ export async function checkNewSessionAction(activityId: string): Promise<NewSess
 }
 
 export async function closeActivityDayAction(activityId: string): Promise<ActionResult> {
-  const user = await assertActivityAccess(activityId);
-  const result = await toResult(() => closeActivityDay(activityId, user.id, user.name));
-  revalidateActivityViews(activityId);
+  const result = await toResult(async () => {
+    const user = await assertActivityAccess(activityId);
+    await closeActivityDay(activityId, user.id, user.name);
+  });
+  if (result.ok) revalidateActivityViews(activityId);
   return result;
 }
 

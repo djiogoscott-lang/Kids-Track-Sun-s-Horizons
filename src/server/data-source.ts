@@ -272,12 +272,17 @@ export async function getAttendanceMap(date: Date, activityId?: string): Promise
   return supaAttendance.getAttendanceMapForDate(date, activityId);
 }
 
+export type { KnownAttendanceState } from "@/server/supabase/attendance-repo";
+
 export async function setAttendance(
   childId: string,
   activityId: string,
   date: Date,
   patch: AttendancePatch,
   recordedBy: string | null,
+  /** Current row state if the caller already read it this request — skips a
+   * redundant re-read inside the repository. See upsertAttendance. */
+  known?: supaAttendance.KnownAttendanceState,
 ): Promise<void> {
   if (!isSupabaseConfigured) {
     const records = await getDemoPresenceRecords();
@@ -294,7 +299,7 @@ export async function setAttendance(
     return;
   }
   const realRecordedBy = recordedBy ? await resolveRealUserId(recordedBy) : null;
-  return supaAttendance.upsertAttendance(childId, activityId, date, patch, realRecordedBy);
+  return supaAttendance.upsertAttendance(childId, activityId, date, patch, realRecordedBy, known);
 }
 
 /** Batch equivalent of setAttendance for the closure roll-call finalization

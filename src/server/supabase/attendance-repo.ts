@@ -68,24 +68,52 @@ export interface AttendancePatch {
  * Garderie against real data — the exact error was a 23514 check-constraint
  * violation, not the departed value ever failing to be recorded.
  */
+export interface KnownAttendanceState {
+  arrived: boolean;
+  arrivedAt: Date | null;
+  departed: boolean;
+  departedAt: Date | null;
+  daycareManual: boolean;
+}
+
 export async function upsertAttendance(
   childId: string,
   activityId: string,
   date: Date,
   patch: AttendancePatch,
   recordedBy: string | null,
+  /**
+   * The row's current state, when the caller already read it earlier in
+   * this same request. Supplying it skips the SELECT below — worth a full
+   * Supabase round trip on the presence-tap path, where the command layer
+   * has just resolved this exact row to authorize the write. Omit it and
+   * the row is re-read as before.
+   */
+  known?: KnownAttendanceState,
 ): Promise<void> {
   const supabase = getServiceRoleClient();
   const dateKey = toDateKey(date);
 
-  const { data: existing, error: fetchError } = await supabase
-    .from("attendance")
-    .select("arrived, arrived_at, departed, departed_at, daycare_manual")
-    .eq("organization_id", ORGANIZATION_ID)
-    .eq("child_id", childId)
-    .eq("date", dateKey)
-    .maybeSingle();
-  if (fetchError) throw fetchError;
+  let existing: { arrived: boolean; arrived_at: string | null; departed: boolean; departed_at: string | null; daycare_manual: boolean } | null;
+  if (known) {
+    existing = {
+      arrived: known.arrived,
+      arrived_at: known.arrivedAt ? known.arrivedAt.toISOString() : null,
+      departed: known.departed,
+      departed_at: known.departedAt ? known.departedAt.toISOString() : null,
+      daycare_manual: known.daycareManual,
+    };
+  } else {
+    const { data, error: fetchError } = await supabase
+      .from("attendance")
+      .select("arrived, arrived_at, departed, departed_at, daycare_manual")
+      .eq("organization_id", ORGANIZATION_ID)
+      .eq("child_id", childId)
+      .eq("date", dateKey)
+      .maybeSingle();
+    if (fetchError) throw fetchError;
+    existing = data;
+  }
 
   const row = {
     organization_id: ORGANIZATION_ID,
