@@ -60,7 +60,7 @@ export function ExcelImportDialog() {
   function analyze(sheetName?: string) {
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
-      setError("Choisissez un fichier .xlsx.");
+      setError("Choisissez un fichier Excel (.xlsx ou .xls).");
       return;
     }
     setError(null);
@@ -136,12 +136,12 @@ export function ExcelImportDialog() {
           {step === "pick" ? (
             <div className="mt-4 space-y-4">
               <p className="text-sm text-[var(--muted)]">
-                Choisissez un fichier .xlsx suivant le modèle officiel. Vous verrez un aperçu avant toute modification.
+                Choisissez un fichier Excel (.xlsx ou .xls) suivant le modèle officiel. Vous verrez un aperçu avant toute modification.
               </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx"
+                accept=".xlsx,.xls"
                 className="block w-full text-sm"
                 aria-label="Choisir un fichier Excel"
                 onChange={(e) => setFileChosen(!!e.target.files?.[0])}

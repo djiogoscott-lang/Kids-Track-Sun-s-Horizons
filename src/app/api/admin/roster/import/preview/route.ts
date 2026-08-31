@@ -109,6 +109,15 @@ export async function POST(request: Request) {
   if (targetActivityId && !targetActivity) {
     return NextResponse.json({ error: "Activité cible introuvable dans cette école." }, { status: 400 });
   }
+  // Caught here rather than per row: a deactivated target makes every single
+  // row fail identically, and one clear sentence up front is far more useful
+  // than sixty copies of the same error in the preview table.
+  if (targetActivity && !targetActivity.active) {
+    return NextResponse.json(
+      { error: `L'activité "${targetActivity.name}" est désactivée. Réactivez-la dans Gestion activités avant d'y importer une liste.` },
+      { status: 400 },
+    );
+  }
 
   // Column mapping is resolved once, against the first sheet actually being
   // read — every selected sheet is expected to share the same header shape

@@ -578,12 +578,43 @@ export async function previewRosterImport(
 ): Promise<{ outcomes: RosterImportOutcome[]; summary: RosterImportSummary }> {
   const { weekStart: normalizedTarget } = weekBounds(new Date(`${targetWeekStart}T12:00:00`));
   const [allChildren, activities, roster] = await Promise.all([getChildrenList(), getActivitiesList(), getRosterForWeek(normalizedTarget)]);
-  const childByName = new Map(allChildren.filter((c) => c.active).map((c) => [`${c.firstName}|${c.lastName}`.toLowerCase().trim(), c]));
+  // Identity is the name PLUS the birth date when both sides know it.
+  //
+  // Name alone is not an identity: the NDC lists hold two sisters both
+  // registered as "FAUVEL Clara" — one born 2020 in 1D, one born 2022 in
+  // 2M6. Matching on name merged them into a single child, and because a
+  // child can hold only one weekly inscription, importing the second list
+  // silently MOVED the first sister's inscription instead of enrolling the
+  // second.
+  //
+  // A birth date only ever splits a match, never creates one: when either
+  // side has no date (every child recorded before the field existed), the
+  // name match stands exactly as before.
+  const activeChildren = allChildren.filter((c) => c.active);
+  const childByName = new Map(activeChildren.map((c) => [`${c.firstName}|${c.lastName}`.toLowerCase().trim(), c]));
+  const childByNameAndBirth = new Map(
+    activeChildren.filter((c) => c.birthDate).map((c) => [`${c.firstName}|${c.lastName}|${c.birthDate}`.toLowerCase().trim(), c]),
+  );
+  /** Resolves a row to an existing child, or undefined when it is a new one. */
+  const findChild = (nameKey: string, birthDate: string) => {
+    if (!birthDate) return childByName.get(nameKey);
+    const exact = childByNameAndBirth.get(`${nameKey}|${birthDate}`);
+    if (exact) return exact;
+    const byName = childByName.get(nameKey);
+    // Same name, both dated, dates disagree -> a different child.
+    if (byName && byName.birthDate && byName.birthDate !== birthDate) return undefined;
+    return byName;
+  };
   // Inactive activities are never auto-matched by name — an inactive
   // activity is not "available for new enrollment" (see ActivityRecord.active),
   // so a file referencing one by name is treated the same as an unrecognized
   // name: the admin must explicitly pick a (necessarily active) replacement.
   const activityByName = new Map(activities.filter((a) => a.active).map((a) => [a.name.toLowerCase().trim(), a]));
+  // Kept separately so a name that IS known but deactivated can be reported
+  // as such. Telling the admin "Activité inconnue : Mat 1 NDC" when the
+  // activity exists and is spelled correctly sends them hunting for a typo
+  // that isn't there — the real fix is to reactivate it.
+  const inactiveActivityByName = new Map(activities.filter((a) => !a.active).map((a) => [a.name.toLowerCase().trim(), a]));
   const activityById = new Map(activities.map((a) => [a.id, a]));
   const rosterByChildId = new Map(roster.map((r) => [r.childId, r]));
   const seenNameKeys = new Set<string>();
@@ -595,9 +626,22 @@ export async function previewRosterImport(
       return { row, status: "ERROR", message: row.fullName?.trim() ? `Nom complet non séparé : "${row.fullName.trim()}"` : "Prénom et nom obligatoires." };
     }
 
-    const activity = row.activityOverride ? activityById.get(row.activityOverride) : activityByName.get(row.activityName.toLowerCase().trim());
+    // An explicit override is resolved by id, but is held to the same
+    // "must be active" rule as a name match — an id picked by hand is still
+    // not a licence to enroll children into a deactivated activity.
+    const overridden = row.activityOverride ? activityById.get(row.activityOverride) : undefined;
+    const activity = row.activityOverride ? (overridden?.active ? overridden : undefined) : activityByName.get(row.activityName.toLowerCase().trim());
     if (!activity) {
-      return { row, status: "UNKNOWN_ACTIVITY", message: row.activityName.trim() ? `Activité inconnue : "${row.activityName.trim()}"` : "Activité manquante." };
+      const named = row.activityName.trim();
+      const inactive = overridden ?? (named ? inactiveActivityByName.get(named.toLowerCase()) : undefined);
+      if (inactive) {
+        return {
+          row,
+          status: "UNKNOWN_ACTIVITY",
+          message: `Activité "${inactive.name}" désactivée : réactivez-la dans Gestion activités avant d'y inscrire des enfants.`,
+        };
+      }
+      return { row, status: "UNKNOWN_ACTIVITY", message: named ? `Activité inconnue : "${named}"` : "Activité manquante." };
     }
 
     const garderie = parseYesNo(row.garderie, "Garderie");
@@ -606,12 +650,17 @@ export async function previewRosterImport(
     }
 
     const nameKey = `${firstName}|${lastName}`.toLowerCase();
-    if (seenNameKeys.has(nameKey)) {
+    const birthDate = (row.birthDate ?? "").trim();
+    // Two rows are the same child only if the birth date agrees too — same
+    // rule as matching against the database, so a file listing two sisters of
+    // the same name isn't collapsed into one inscription either.
+    const fileKey = birthDate ? `${nameKey}|${birthDate}` : nameKey;
+    if (seenNameKeys.has(fileKey)) {
       return { row, status: "DUPLICATE", activityId: activity.id, activityName: activity.name, message: "Cet enfant apparaît plusieurs fois dans ce fichier." };
     }
-    seenNameKeys.add(nameKey);
+    seenNameKeys.add(fileKey);
 
-    const child = childByName.get(nameKey);
+    const child = findChild(nameKey, birthDate);
     if (!child) {
       return { row, status: "NEW_CHILD", activityId: activity.id, activityName: activity.name, daycareAuto: garderie.value, notes: row.notes.trim() };
     }
@@ -628,7 +677,13 @@ export async function previewRosterImport(
     await Promise.all(
       outcomes.map(async (outcome, index) => {
         if (budget <= 0) return;
-        if (outcome.status === "UNKNOWN_ACTIVITY" && !outcome.row.activityOverride && outcome.row.activityName.trim()) {
+        // A name that matches a real-but-deactivated activity is not a
+        // spelling problem, so no suggestion can help: asking the model to
+        // "correct" "Mat 1 NDC" — which is exactly right — burns one call per
+        // row (15 rows took 4s instead of 0.3s) and can only ever propose a
+        // different activity than the one the file actually names.
+        const namesAnInactiveActivity = inactiveActivityByName.has(outcome.row.activityName.toLowerCase().trim());
+        if (outcome.status === "UNKNOWN_ACTIVITY" && !outcome.row.activityOverride && outcome.row.activityName.trim() && !namesAnInactiveActivity) {
           budget--;
           const suggested = await suggestActivityMatch(outcome.row.activityName, knownActivityNames);
           if (suggested) outcomes[index] = { ...outcome, aiSuggestion: { ...outcome.aiSuggestion, activityName: suggested } };
@@ -709,12 +764,19 @@ export async function commitRosterImport(rows: RosterImportRow[], weekStart: str
           })),
         )
       : [];
-  const createdByKey = new Map(createdChildren.map((c) => [`${c.firstName.toLowerCase()}|${c.lastName.toLowerCase()}|${c.activityId}`, c]));
+  // The birth date is part of the key for the same reason it is part of
+  // identity upstream: two same-named sisters can legitimately be created in
+  // one batch, and keying on (name, activity) alone would map both outcomes
+  // onto whichever row won the Map, enrolling one child twice and the other
+  // never.
+  const createdKey = (firstName: string, lastName: string, activityId: string, birthDate: string) =>
+    `${firstName.toLowerCase()}|${lastName.toLowerCase()}|${activityId}|${birthDate}`;
+  const createdByKey = new Map(createdChildren.map((c) => [createdKey(c.firstName, c.lastName, c.activityId, c.birthDate), c]));
 
   const entries: Array<{ childId: string; activityId: string }> = [];
   for (const outcome of outcomes) {
     if (outcome.status === "NEW_CHILD") {
-      const key = `${outcome.row.firstName.trim().toLowerCase()}|${outcome.row.lastName.trim().toLowerCase()}|${outcome.activityId}`;
+      const key = createdKey(outcome.row.firstName.trim(), outcome.row.lastName.trim(), outcome.activityId!, outcome.row.birthDate?.trim() || "");
       const created = createdByKey.get(key);
       if (created) entries.push({ childId: created.id, activityId: outcome.activityId! });
     } else if (outcome.status === "KNOWN_CHILD" || outcome.status === "ALREADY_ENROLLED") {

@@ -11,6 +11,8 @@ export interface SupabaseChild {
   notes: string;
   isDemo: boolean;
   createdAt: Date;
+  /** ISO date or "" — see ChildRecord.birthDate. */
+  birthDate: string;
 }
 
 interface ChildRow {
@@ -23,6 +25,7 @@ interface ChildRow {
   notes: string;
   is_demo: boolean;
   created_at: string;
+  birth_date: string | null;
 }
 
 function mapRow(row: ChildRow): SupabaseChild {
@@ -36,6 +39,9 @@ function mapRow(row: ChildRow): SupabaseChild {
     notes: row.notes,
     isDemo: row.is_demo,
     createdAt: new Date(row.created_at),
+    // A `date` column comes back as "YYYY-MM-DD"; sliced rather than parsed
+    // through Date so a birth date can never shift a day across a timezone.
+    birthDate: row.birth_date ? String(row.birth_date).slice(0, 10) : "",
   };
 }
 

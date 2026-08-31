@@ -158,6 +158,24 @@ function MonitorAssignment({ activity, monitors }: { activity: ActivityRecord; m
     });
   }
 
+  // The activity has a monitor this list cannot name — the case in local
+  // demo-auth mode, where the selectable monitors are the demo ones and the
+  // stored assignment is a real Supabase user. A <select> cannot show a value
+  // it has no option for: it would fall back to displaying "Aucun moniteur",
+  // and the next change event would write that falsehood to the real
+  // database. Show the truth read-only instead of offering an edit that
+  // cannot be made correctly.
+  const unrepresentable = Boolean(activity.monitorId) && !currentMonitor;
+  if (unrepresentable) {
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-xs font-medium text-[var(--muted)]">
+          Moniteur attribué (non modifiable ici)
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-1">
       <select

@@ -72,7 +72,7 @@ export default async function AdminRosterPage({ searchParams }: { searchParams: 
         <RosterImportDialog
           weekStart={weekStart}
           weekLabel={`${formatDateLong(new Date(`${weekStart}T12:00:00`))} au ${formatDateLong(new Date(`${weekEnd}T12:00:00`))}`}
-          activities={activities.map((a) => ({ id: a.id, name: a.name }))}
+          activities={activities.map((a) => ({ id: a.id, name: a.name, active: a.active }))}
         />
         <RosterExportControl weekStart={weekStart} activities={activities.map((a) => ({ id: a.id, name: a.name }))} />
         <a

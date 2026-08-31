@@ -107,7 +107,7 @@ export function RosterImportDialog({
 }: {
   weekStart: string;
   weekLabel: string;
-  activities: Array<{ id: string; name: string }>;
+  activities: Array<{ id: string; name: string; active: boolean }>;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -172,7 +172,7 @@ export function RosterImportDialog({
   } = {}) {
     const file = selectedFile ?? fileInputRef.current?.files?.[0] ?? null;
     if (!file) {
-      setError("Choisissez un fichier .xlsx.");
+      setError("Choisissez un fichier Excel (.xlsx ou .xls).");
       return;
     }
     if (!selectedFile) setSelectedFile(file);
@@ -345,14 +345,14 @@ export function RosterImportDialog({
           {step === "pick" ? (
             <div className="mt-4 space-y-4">
               <p className="text-sm text-[var(--muted)]">
-                Fichier .xlsx avec les colonnes Prénom, Nom (ou une seule colonne Nom complet), Activité (Garderie et Notes facultatives).
+                Fichier Excel (.xlsx ou .xls) avec les colonnes Prénom, Nom (ou une seule colonne Nom complet), Activité (Garderie et Notes facultatives).
                 L&apos;ordre des colonnes n&apos;a pas d&apos;importance. Vous verrez un aperçu classé par activité avant toute écriture — une IA peut
                 suggérer une correction pour une activité non reconnue ou un nom non séparé, mais rien n&apos;est jamais appliqué sans votre confirmation.
               </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx"
+                accept=".xlsx,.xls"
                 className="block w-full text-sm"
                 aria-label="Choisir un fichier Excel"
                 onChange={(e) => setFileChosen(!!e.target.files?.[0])}
@@ -366,9 +366,14 @@ export function RosterImportDialog({
                   className="mt-1.5 h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3.5 text-sm"
                 >
                   <option value="">— Lire l&apos;activité dans le fichier —</option>
+                  {/* A deactivated activity accepts no new enrollment, so
+                      offering it as a target would let the admin pick a
+                      destination where every row is then rejected. Shown but
+                      disabled, so it's clear the activity exists and why it
+                      can't be chosen. */}
                   {activities.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
+                    <option key={a.id} value={a.id} disabled={!a.active}>
+                      {a.active ? a.name : `${a.name} (désactivée)`}
                     </option>
                   ))}
                 </select>

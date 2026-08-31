@@ -62,6 +62,11 @@ export interface ChildRecord {
   notes: string;
   isDemo: boolean;
   createdAt: Date;
+  /** ISO (YYYY-MM-DD), or "" when unknown — most children predate the field.
+   * Part of a child's identity for import matching: two real sisters both
+   * registered as "FAUVEL Clara" (born 2020 and 2022) are two children, and
+   * matching on name alone silently merged them into one. */
+  birthDate: string;
 }
 
 /**
@@ -84,7 +89,15 @@ export const getActivitiesList = cache(async (): Promise<ActivityRecord[]> => {
   const demoAssignments = getActivityAssignments();
   return activities.map((a) => {
     const demoActivityId = ACTIVITIES.find((d) => d.name === a.name)?.id;
-    return { ...a, monitorId: (demoActivityId && demoAssignments.get(demoActivityId)) ?? null };
+    // No demo counterpart (every real activity once the school renamed them:
+    // "Mat 1 NDC" matches none of the demo seed's Danse/Vélo/…): fall back to
+    // the REAL assignment rather than reporting null. Reporting null here is
+    // not a harmless display quirk — the admin screen renders that as "Aucun
+    // moniteur" and offers to save it back, and unassigning writes to the
+    // real database even in demo-auth mode. That is how Mat 1 NDC silently
+    // lost its monitor.
+    if (!demoActivityId) return a;
+    return { ...a, monitorId: demoAssignments.get(demoActivityId) ?? null };
   });
 });
 
@@ -173,7 +186,7 @@ async function resolveRealUserId(userId: string): Promise<string | null> {
 // Demo mode has no created_at/is_demo concept — synthesized here so the rest
 // of the app can treat ChildRecord uniformly regardless of backend.
 function demoChildToRecord(child: { id: string; firstName: string; lastName: string; activityId: string; daycareAuto: boolean; active: boolean; notes: string }): ChildRecord {
-  return { ...child, isDemo: false, createdAt: new Date(0) };
+  return { ...child, isDemo: false, createdAt: new Date(0), birthDate: "" };
 }
 
 export const getChildrenList = cache(async (): Promise<ChildRecord[]> => {

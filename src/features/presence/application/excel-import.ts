@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import type { ActivityRecord, ChildRecord } from "@/server/data-source";
 import { normalizePrefixedXlsx } from "./xlsx-normalize";
+import { convertLegacyXlsToXlsx, isLegacyXls } from "./xls-legacy";
 
 export const EXCEL_COLUMNS = ["Prénom", "Nom", "Activité", "Garderie", "Actif", "Notes"] as const;
 
@@ -224,15 +225,33 @@ function resolveColumnMap(headerRow: ExcelJS.Row): Map<FieldKey, number> {
 
 /**
  * Never trusts the upload: extension and size are checked before a single
- * byte is parsed, and only plain cell values are ever read — exceljs does
- * not execute macros or formulas.
+ * byte is parsed, and only plain cell values are ever read — neither engine
+ * executes macros or formulas.
+ *
+ * Both Excel generations are accepted. Which reader runs is decided by the
+ * file's own signature, not its name: a legacy BIFF8 workbook is transcoded
+ * to .xlsx first (see xls-legacy.ts) and then follows the exact same path as
+ * a native .xlsx, so the two formats cannot drift apart in behaviour.
  */
 export async function loadWorkbook(fileName: string, buffer: Buffer): Promise<ExcelJS.Workbook> {
-  if (!/\.xlsx$/i.test(fileName)) {
-    throw new ImportFileError("Seuls les fichiers .xlsx sont acceptés.");
+  if (!/\.xlsx?$/i.test(fileName)) {
+    throw new ImportFileError("Seuls les fichiers Excel (.xlsx ou .xls) sont acceptés.");
   }
   if (buffer.byteLength > MAX_IMPORT_FILE_BYTES) {
     throw new ImportFileError(`Fichier trop volumineux (max ${MAX_IMPORT_FILE_BYTES / 1024 / 1024} Mo).`);
+  }
+
+  if (isLegacyXls(buffer)) {
+    let converted: Buffer | null;
+    try {
+      converted = convertLegacyXlsToXlsx(buffer);
+    } catch {
+      converted = null;
+    }
+    if (!converted) {
+      throw new ImportFileError("Fichier .xls illisible — le classeur est vide ou endommagé.");
+    }
+    buffer = converted;
   }
 
   const workbook = new ExcelJS.Workbook();
@@ -256,7 +275,7 @@ export async function loadWorkbook(fileName: string, buffer: Buffer): Promise<Ex
       normalized = null;
     }
     if (!normalized) {
-      throw new ImportFileError("Fichier illisible — vérifiez qu'il s'agit bien d'un fichier Excel (.xlsx) valide.");
+      throw new ImportFileError("Fichier illisible — vérifiez qu'il s'agit bien d'un fichier Excel (.xlsx ou .xls) valide.");
     }
     try {
       await workbook.xlsx.load(normalized as unknown as LoadArg);
@@ -264,7 +283,7 @@ export async function loadWorkbook(fileName: string, buffer: Buffer): Promise<Ex
       // Surface the original failure's shape, not the retry's: if both fail
       // the file really is unreadable.
       void firstError;
-      throw new ImportFileError("Fichier illisible — vérifiez qu'il s'agit bien d'un fichier Excel (.xlsx) valide.");
+      throw new ImportFileError("Fichier illisible — vérifiez qu'il s'agit bien d'un fichier Excel (.xlsx ou .xls) valide.");
     }
   }
   if (workbook.worksheets.length === 0) {
