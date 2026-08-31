@@ -38,6 +38,7 @@ import {
 import { getActivityDetail, getActivityIdForMonitor, getEffectiveActivityIdForChild } from "@/features/presence/application/queries";
 import { PresenceCommandError } from "@/features/presence/application/errors";
 import { requireUser } from "@/lib/auth/require-user";
+import { getActivitiesList } from "@/server/data-source";
 import { publishActivityUpdate } from "@/server/demo/notifications-store";
 import type { NewChildRecordInput } from "@/server/data-source";
 
@@ -281,6 +282,16 @@ export type ActivityDependencyResult =
 export async function getActivityDependencyCountsAction(activityId: string): Promise<ActivityDependencyResult> {
   await requireUser("ADMIN");
   try {
+    // The counts query is already scoped to the active school, so an id from
+    // another school leaks nothing — it just comes back as all zeros. That is
+    // worse than an error here: the delete dialog would read those zeros as
+    // "no linked data, safe to delete permanently" and then report a success
+    // for a delete that removed nothing. Check the activity actually belongs
+    // to this school and say so plainly instead.
+    const activities = await getActivitiesList();
+    if (!activities.some((a) => a.id === activityId)) {
+      return { ok: false, message: "Activité introuvable dans cette école." };
+    }
     const counts = await getActivityDependencyCounts(activityId);
     return { ok: true, ...counts };
   } catch {

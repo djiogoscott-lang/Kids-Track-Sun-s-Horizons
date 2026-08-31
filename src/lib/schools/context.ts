@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { getServiceRoleClient } from "@/lib/supabase/service";
+import { BOOTSTRAP_ORGANIZATION_ID, getServiceRoleClient } from "@/lib/supabase/service";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isSupabaseAuthEnabled } from "@/lib/env";
 import type { UserRole } from "@/lib/constants/roles";
@@ -53,9 +53,25 @@ export const getUserSchools = cache(async (): Promise<SchoolMembership[]> => {
   // Demo sessions carry ids like "user-admin", which are not UUIDs and have
   // no membership rows — querying organization_memberships with one is a
   // hard 22P02 error, not an empty result. Demo mode is a local testing
-  // bridge with no real accounts, so every school is offered and the role
-  // comes from the demo session itself. Same demo/real split as data-source.
+  // bridge with no real accounts, so membership has to be simulated.
+  //
+  // Only the demo ADMIN gets every school (they stand in for the super admin
+  // locally, and the schools screen has to be exercisable). A demo MONITOR
+  // gets the bootstrap school only: granting them every school made the
+  // school switcher offer schools they have no business seeing, which both
+  // misrepresents production — where real memberships decide — and makes
+  // demo mode useless for testing isolation, since every user would pass.
   if (!isSupabaseAuthEnabled) {
+    if (user.role !== "ADMIN") {
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("id, name, active")
+        .eq("id", BOOTSTRAP_ORGANIZATION_ID)
+        .maybeSingle();
+      if (error) throw error;
+      const org = data as { id: string; name: string; active: boolean } | null;
+      return org ? [{ schoolId: org.id, name: org.name, active: org.active, role: user.role }] : [];
+    }
     const { data, error } = await supabase.from("organizations").select("id, name, active").order("name");
     if (error) throw error;
     return (data ?? []).map((org) => ({ schoolId: org.id, name: org.name, active: org.active, role: user.role }));

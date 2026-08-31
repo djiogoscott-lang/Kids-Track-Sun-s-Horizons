@@ -459,7 +459,14 @@ export async function addChildToRoster(childId: string, activityId: string, week
 }
 
 export async function removeChildFromRoster(childId: string, weekStart: string, removedBy: string | null = null) {
-  await removeFromRosterRecord(childId, weekStart, removedBy);
+  // The delete is scoped to the active school, so a child belonging to
+  // another school (or simply not on this week's roster) matches nothing.
+  // Reporting success for that would tell the admin a participant was
+  // removed when none was.
+  const removed = await removeFromRosterRecord(childId, weekStart, removedBy);
+  if (removed === 0) {
+    throw new PresenceCommandError("Ce participant n'est pas inscrit pour cette semaine dans cette école.");
+  }
 }
 
 export interface ResetRosterResult {

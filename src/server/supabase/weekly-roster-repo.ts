@@ -184,7 +184,11 @@ export async function addToRoster(childId: string, activityId: string, weekStart
   await logRosterAudit({ action: "ADD", actorId: createdBy, weekStart, weekEnd, activityId, rowsAffected: 1 });
 }
 
-export async function removeFromRoster(childId: string, weekStart: string, removedBy: string | null = null): Promise<void> {
+/** Returns how many roster rows were actually removed. The delete is scoped
+ * to the active school, so a child from another school matches nothing —
+ * the caller needs to know that happened rather than report a success for a
+ * removal that did not occur. */
+export async function removeFromRoster(childId: string, weekStart: string, removedBy: string | null = null): Promise<number> {
   assertScope("childId", childId);
   assertScope("weekStart", weekStart);
   const supabase = getServiceRoleClient();
@@ -199,6 +203,7 @@ export async function removeFromRoster(childId: string, weekStart: string, remov
   if (data.length > 0) {
     await logRosterAudit({ action: "REMOVE", actorId: removedBy, weekStart, activityId: data[0].activity_id, rowsAffected: data.length });
   }
+  return data.length;
 }
 
 /** Returns the number of rows actually removed, for the confirmation message.

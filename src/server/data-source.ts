@@ -555,7 +555,7 @@ export async function addToRosterRecord(childId: string, activityId: string, wee
   return supaRoster.addToRoster(childId, activityId, weekStart, weekEnd, realCreatedBy);
 }
 
-export async function removeFromRosterRecord(childId: string, weekStart: string, removedBy: string | null = null): Promise<void> {
+export async function removeFromRosterRecord(childId: string, weekStart: string, removedBy: string | null = null): Promise<number> {
   if (!isSupabaseConfigured) throw new PresenceCommandError("La gestion du roster nécessite Supabase.");
   const realRemovedBy = removedBy ? await resolveRealUserId(removedBy) : null;
   return supaRoster.removeFromRoster(childId, weekStart, realRemovedBy);

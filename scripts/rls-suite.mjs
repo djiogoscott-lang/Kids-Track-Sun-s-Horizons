@@ -87,16 +87,28 @@ async function main() {
   const anyActivity = activities[0];
 
   const { rows: memberships } = await client.query(
-    `select m.user_id, m.role, m.revoked_at, u.email
+    `select m.user_id, m.role, m.revoked_at, m.organization_id, u.email
      from organization_memberships m join auth.users u on u.id = m.user_id`,
   );
   const admin = memberships.find((m) => m.role === "ADMIN" && !m.revoked_at);
+
+  // Everything an admin may see is scoped to the school(s) they belong to.
+  // Comparing against global totals (as this suite did while the app was
+  // single-school) turns correct cross-school denials into false failures —
+  // and, worse, would hide a real leak behind an expected-looking number.
+  const adminSchoolIds = new Set(
+    memberships.filter((m) => m.user_id === admin.user_id && !m.revoked_at).map((m) => m.organization_id),
+  );
+  const adminActivities = activities.filter((a) => adminSchoolIds.has(a.organization_id));
+  const foreignActivities = activities.filter((a) => !adminSchoolIds.has(a.organization_id));
   const monitorByEmail = Object.fromEntries(memberships.filter((m) => m.role === "MONITOR").map((m) => [m.email, m]));
 
-  const { rows: activeChildren } = await client.query("select id, activity_id from children where active");
+  const { rows: activeChildren } = await client.query("select id, activity_id, organization_id from children where active");
   const countByActivity = {};
   for (const c of activeChildren) countByActivity[c.activity_id] = (countByActivity[c.activity_id] ?? 0) + 1;
   const childOf = (activityId) => activeChildren.find((c) => c.activity_id === activityId)?.id;
+  const adminActiveChildren = activeChildren.filter((c) => adminSchoolIds.has(c.organization_id));
+  const foreignChildren = activeChildren.filter((c) => !adminSchoolIds.has(c.organization_id));
 
   // children_read_scope has no `active` condition — RLS scopes by activity,
   // not by active status (the app's own queries decide whether to filter
@@ -136,14 +148,45 @@ async function main() {
     // added one. What matters is that the admin sees *every* activity.
     const acts = await c.query("select id from activities");
     check(
-      `admin: sees all ${activities.length} activities`,
-      acts.rows.length === activities.length,
-      `got ${acts.rows.length}, expected ${activities.length}`,
+      `admin: sees all ${adminActivities.length} activities of their own school(s)`,
+      acts.rows.length === adminActivities.length,
+      `got ${acts.rows.length}, expected ${adminActivities.length}`,
     );
 
     const kids = await c.query("select id from children where active");
-    const totalKids = Object.values(countByActivity).reduce((a, b) => a + b, 0);
-    check("admin: sees all active children", kids.rows.length === totalKids, `got ${kids.rows.length}, expected ${totalKids}`);
+    check(
+      "admin: sees all active children of their own school(s)",
+      kids.rows.length === adminActiveChildren.length,
+      `got ${kids.rows.length}, expected ${adminActiveChildren.length}`,
+    );
+
+    // Cross-school denial, asserted explicitly rather than inferred from a
+    // count: name another school's rows directly and require zero results.
+    // Skipped (not silently passed) when only one school exists, so the
+    // report never claims to have proven isolation it could not test.
+    if (foreignActivities.length > 0) {
+      const ids = foreignActivities.map((a) => a.id);
+      const seen = await c.query("select id from activities where id = any($1::uuid[])", [ids]);
+      check("admin: cannot see another school's activities by UUID", seen.rows.length === 0, `got ${seen.rows.length}`);
+
+      const foreignWrite = await c.query("update activities set name = name where id = any($1::uuid[]) returning id", [ids]);
+      check("admin: cannot write another school's activities", foreignWrite.rowCount === 0, `rowCount=${foreignWrite.rowCount}`);
+    } else {
+      console.log("  (skipped cross-school activity checks — only one school exists)");
+    }
+    if (foreignChildren.length > 0) {
+      const ids = foreignChildren.map((ch) => ch.id);
+      const seen = await c.query("select id from children where id = any($1::uuid[])", [ids]);
+      check("admin: cannot see another school's children by UUID", seen.rows.length === 0, `got ${seen.rows.length}`);
+
+      const foreignAttendance = await c.query("select id from attendance where child_id = any($1::uuid[])", [ids]);
+      check("admin: cannot see another school's attendance", foreignAttendance.rows.length === 0, `got ${foreignAttendance.rows.length}`);
+
+      const foreignRoster = await c.query("select id from weekly_roster where child_id = any($1::uuid[])", [ids]);
+      check("admin: cannot see another school's roster", foreignRoster.rows.length === 0, `got ${foreignRoster.rows.length}`);
+    } else {
+      console.log("  (skipped cross-school children checks — only one school exists)");
+    }
 
     const mem = await c.query("select id from organization_memberships");
     check("admin: sees all memberships", mem.rows.length === memberships.length, `got ${mem.rows.length}, expected ${memberships.length}`);
