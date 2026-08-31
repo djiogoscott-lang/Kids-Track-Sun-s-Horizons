@@ -592,7 +592,7 @@ export function RosterImportDialog({
                 </ul>
               </div>
               <p className="text-xs text-[var(--muted)]">
-                Semaine du {weekLabel}. {preview.summary.newChildren} nouvelle{preview.summary.newChildren > 1 ? "s" : ""} fiche{preview.summary.newChildren > 1 ? "s" : ""} enfant sera{preview.summary.newChildren > 1 ? "ont" : ""} créée{preview.summary.newChildren > 1 ? "s" : ""}. Aucune séance ni historique n&apos;est modifié.
+                Semaine du {weekLabel}. {preview.summary.newChildren} nouvelle{preview.summary.newChildren > 1 ? "s" : ""} fiche{preview.summary.newChildren > 1 ? "s" : ""} enfant {preview.summary.newChildren > 1 ? "seront créées" : "sera créée"}. Aucune séance ni historique n&apos;est modifié.
               </p>
               {error ? <p role="alert" className="text-sm font-medium text-[var(--danger)]">{error}</p> : null}
               <div className="flex gap-2">

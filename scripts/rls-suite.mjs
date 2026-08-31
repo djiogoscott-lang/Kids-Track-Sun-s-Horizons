@@ -136,8 +136,18 @@ async function main() {
     const upd = await c.query("update activities set name = name where id = $1 returning id", [byName["Danse"].id]);
     check("admin: can write to activities", upd.rowCount === 1);
 
-    const childId = childOf(byName["Danse"].id);
-    const updChild = await c.query("update children set notes = notes where id = $1 returning id", [childId]);
+    // An empty children table is a legitimate state (a fresh season starts
+    // that way), so prove the admin's write permission with a disposable row
+    // of our own rather than depending on seed data existing. The whole
+    // block runs inside the transaction asUser() always rolls back, so this
+    // child never actually reaches the database.
+    const probeChild = await c.query(
+      `insert into children (organization_id, first_name, last_name, activity_id)
+       values ($1, 'RlsProbe', 'Child', $2) returning id`,
+      [byName["Danse"].organization_id, byName["Danse"].id],
+    );
+    check("admin: can create children", probeChild.rowCount === 1, `rowCount=${probeChild.rowCount}`);
+    const updChild = await c.query("update children set notes = notes where id = $1 returning id", [probeChild.rows[0].id]);
     check("admin: can write to children", updChild.rowCount === 1);
 
     const roster = await c.query("select id from weekly_roster");

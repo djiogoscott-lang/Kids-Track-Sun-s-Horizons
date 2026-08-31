@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import type { ActivityRecord, ChildRecord } from "@/server/data-source";
+import { normalizePrefixedXlsx } from "./xlsx-normalize";
 
 export const EXCEL_COLUMNS = ["Prénom", "Nom", "Activité", "Garderie", "Actif", "Notes"] as const;
 
@@ -235,14 +236,36 @@ export async function loadWorkbook(fileName: string, buffer: Buffer): Promise<Ex
   }
 
   const workbook = new ExcelJS.Workbook();
+  // A transitive dependency (fast-csv, via exceljs) bundles its own older
+  // @types/node, so exceljs's declared Buffer type doesn't structurally
+  // match this file's Buffer — a type-only mismatch, not a real one (both
+  // are the same Node Buffer at runtime).
+  type LoadArg = Parameters<typeof workbook.xlsx.load>[0];
   try {
-    // A transitive dependency (fast-csv, via exceljs) bundles its own older
-    // @types/node, so exceljs's declared Buffer type doesn't structurally
-    // match this file's Buffer — a type-only mismatch, not a real one (both
-    // are the same Node Buffer at runtime).
-    await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
-  } catch {
-    throw new ImportFileError("Fichier illisible — vérifiez qu'il s'agit bien d'un fichier Excel (.xlsx) valide.");
+    await workbook.xlsx.load(buffer as unknown as LoadArg);
+  } catch (firstError) {
+    // exceljs can't parse OOXML that uses a namespace prefix (<x:workbook>)
+    // even though it's perfectly valid and several generators emit it. Retry
+    // once against a normalized copy before calling the file unreadable —
+    // this path only runs after a genuine failure, so files exceljs already
+    // handles are never rewritten. See xlsx-normalize.ts.
+    let normalized: Buffer | null = null;
+    try {
+      normalized = await normalizePrefixedXlsx(buffer);
+    } catch {
+      normalized = null;
+    }
+    if (!normalized) {
+      throw new ImportFileError("Fichier illisible — vérifiez qu'il s'agit bien d'un fichier Excel (.xlsx) valide.");
+    }
+    try {
+      await workbook.xlsx.load(normalized as unknown as LoadArg);
+    } catch {
+      // Surface the original failure's shape, not the retry's: if both fail
+      // the file really is unreadable.
+      void firstError;
+      throw new ImportFileError("Fichier illisible — vérifiez qu'il s'agit bien d'un fichier Excel (.xlsx) valide.");
+    }
   }
   if (workbook.worksheets.length === 0) {
     throw new ImportFileError("Le fichier ne contient aucune feuille.");
