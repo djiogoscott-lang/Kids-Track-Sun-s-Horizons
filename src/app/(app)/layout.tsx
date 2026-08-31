@@ -61,13 +61,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
 
           {user.role === "ADMIN" ? (
-            <nav className="hidden items-center gap-1 sm:flex" aria-label="Navigation principale">
+            <nav
+              // flex-wrap, and min-w-0 so the nav may actually shrink: as
+              // entries were added (Écoles came with multi-school) the row
+              // grew past 1237px and pushed the page 120px wider than a
+              // 1280px window, leaving every screen horizontally scrollable
+              // and the last entry hanging off the edge. Wrapping keeps every
+              // entry reachable instead of hiding or truncating any.
+              className="hidden min-w-0 flex-wrap items-center justify-center gap-1 sm:flex"
+              aria-label="Navigation principale"
+            >
               {ADMIN_LINKS.map((link) => (
                 <Link
                   key={link.label}
                   href={link.href}
                   data-tour={link.tourId}
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-[var(--background)] hover:text-[var(--foreground)]"
                 >
                   <link.icon size={16} />
                   {link.label}

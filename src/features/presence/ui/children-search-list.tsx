@@ -237,7 +237,15 @@ export function ChildrenSearchList({ childrenList, activityNames }: { childrenLi
                 </div>
                 {!selectionMode ? (
                   <div className="flex items-center gap-2">
-                    <Link href={`/admin/children/${child.id}`} className="text-sm font-semibold text-[var(--primary)] hover:underline">
+                    {/* The negative margin cancels the padding visually, so the
+                        row keeps its density while the tap target grows from
+                        20px to ~44px — on a phone this list is 180+ rows of
+                        stacked links, and a 20px target is a mis-tap waiting
+                        to happen. */}
+                    <Link
+                      href={`/admin/children/${child.id}`}
+                      className="-my-3 inline-flex items-center py-3 text-sm font-semibold text-[var(--primary)] hover:underline"
+                    >
                       Modifier
                     </Link>
                     <ChildActiveToggle childId={child.id} active={child.active} />
