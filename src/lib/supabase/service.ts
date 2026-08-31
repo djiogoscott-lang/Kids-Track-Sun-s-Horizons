@@ -29,4 +29,16 @@ export function getServiceRoleClient(): SupabaseClient {
   return cached;
 }
 
-export const ORGANIZATION_ID = "00000000-0000-0000-0000-000000000001";
+/**
+ * The first school's id, kept ONLY for paths that run without a user session
+ * and therefore cannot resolve a school from one — currently just the
+ * keep-alive cron, which pings a single row to stop Supabase pausing the
+ * project.
+ *
+ * Application code must never use this to scope data: a school is resolved
+ * per request from the signed-in user's memberships (see
+ * lib/schools/context.ts). Scoping a query with this constant would pin it
+ * to one school regardless of who is asking, which is precisely the
+ * single-tenant assumption the multi-school work removed.
+ */
+export const BOOTSTRAP_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000001";

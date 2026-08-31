@@ -1,4 +1,5 @@
-import { getServiceRoleClient, ORGANIZATION_ID } from "@/lib/supabase/service";
+import { getServiceRoleClient } from "@/lib/supabase/service";
+import { requireActiveSchoolId } from "@/lib/schools/context";
 import { toDateKey } from "./attendance-repo";
 
 export interface DayState {
@@ -12,7 +13,7 @@ export async function getDayState(activityId: string, date: Date): Promise<DaySt
   const { data, error } = await supabase
     .from("activity_day_state")
     .select("closed, closed_at, closed_by")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("activity_id", activityId)
     .eq("date", toDateKey(date))
     .maybeSingle();
@@ -28,7 +29,7 @@ export async function getDayStatesForDateRange(startDate: Date, endDate: Date, a
   let query = supabase
     .from("activity_day_state")
     .select("activity_id, date, closed, closed_at, closed_by")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .gte("date", toDateKey(startDate))
     .lte("date", toDateKey(endDate));
   if (activityId) query = query.eq("activity_id", activityId);
@@ -57,7 +58,7 @@ export async function closeDay(activityId: string, date: Date, closedByUserId: s
   }
   const { error } = await supabase.from("activity_day_state").upsert(
     {
-      organization_id: ORGANIZATION_ID,
+      organization_id: (await requireActiveSchoolId()),
       activity_id: activityId,
       date: toDateKey(date),
       closed: true,

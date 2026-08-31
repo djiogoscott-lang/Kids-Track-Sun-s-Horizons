@@ -1,4 +1,5 @@
-import { getServiceRoleClient, ORGANIZATION_ID } from "@/lib/supabase/service";
+import { getServiceRoleClient } from "@/lib/supabase/service";
+import { requireActiveSchoolId } from "@/lib/schools/context";
 
 export interface Notification {
   id: string;
@@ -41,7 +42,7 @@ export async function getNotificationsForActivity(activityId: string): Promise<N
   const { data, error } = await supabase
     .from("notifications")
     .select(SELECT_COLUMNS)
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("activity_id", activityId)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -55,7 +56,7 @@ export async function getUnreadCountForActivity(activityId: string): Promise<num
   const { count, error } = await supabase
     .from("notifications")
     .select("id", { count: "exact", head: true })
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("activity_id", activityId)
     .is("read_at", null);
   if (error) throw error;
@@ -67,7 +68,7 @@ export async function getAllNotifications(): Promise<Notification[]> {
   const { data, error } = await supabase
     .from("notifications")
     .select(SELECT_COLUMNS)
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data as unknown as (Omit<NotificationRow, "created_by_name"> & { created_by_name: { full_name: string } | null })[]).map((row) =>
@@ -79,7 +80,7 @@ export async function addNotification(activityId: string, message: string, creat
   const supabase = getServiceRoleClient();
   const { data, error } = await supabase
     .from("notifications")
-    .insert({ organization_id: ORGANIZATION_ID, activity_id: activityId, message, created_by: createdBy })
+    .insert({ organization_id: (await requireActiveSchoolId()), activity_id: activityId, message, created_by: createdBy })
     .select("id, activity_id, message, created_at, read_at")
     .single();
   if (error) throw error;
@@ -91,7 +92,7 @@ export async function markActivityNotificationsRead(activityId: string): Promise
   const { error } = await supabase
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("activity_id", activityId)
     .is("read_at", null);
   if (error) throw error;

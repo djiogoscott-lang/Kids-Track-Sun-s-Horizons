@@ -1,4 +1,5 @@
-import { getServiceRoleClient, ORGANIZATION_ID } from "@/lib/supabase/service";
+import { getServiceRoleClient } from "@/lib/supabase/service";
+import { requireActiveSchoolId } from "@/lib/schools/context";
 
 export interface MonitorAdminRow {
   id: string;
@@ -23,8 +24,8 @@ export async function getMonitorsForAdmin(): Promise<MonitorAdminRow[]> {
     supabase
       .from("organization_memberships")
       .select("user_id, role, revoked_at, profiles!organization_memberships_user_id_fkey(full_name)")
-      .eq("organization_id", ORGANIZATION_ID),
-    supabase.from("activities").select("id, name, monitor_id").eq("organization_id", ORGANIZATION_ID),
+      .eq("organization_id", (await requireActiveSchoolId())),
+    supabase.from("activities").select("id, name, monitor_id").eq("organization_id", (await requireActiveSchoolId())),
     supabase.auth.admin.listUsers(),
   ]);
   if (membershipsResult.error) throw membershipsResult.error;
@@ -65,7 +66,7 @@ export async function setMonitorActive(monitorId: string, active: boolean, actin
         ? { revoked_at: null, revoked_by: null, revocation_reason: null }
         : { revoked_at: new Date().toISOString(), revoked_by: actingAdminId, revocation_reason: "Désactivé par l'administrateur" },
     )
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("user_id", monitorId)
     .eq("role", "MONITOR");
   if (error) throw error;
@@ -114,7 +115,7 @@ export async function createAccountWithPassword(
 
   const { error: membershipError } = await supabase
     .from("organization_memberships")
-    .insert({ organization_id: ORGANIZATION_ID, user_id: userId, role });
+    .insert({ organization_id: (await requireActiveSchoolId()), user_id: userId, role });
   if (membershipError) {
     await supabase.auth.admin.deleteUser(userId);
     throw membershipError;
@@ -125,9 +126,9 @@ export async function createAccountWithPassword(
       .from("activities")
       .update({ monitor_id: userId })
       .eq("id", activityId)
-      .eq("organization_id", ORGANIZATION_ID);
+      .eq("organization_id", (await requireActiveSchoolId()));
     if (activityError) {
-      await supabase.from("organization_memberships").delete().eq("user_id", userId).eq("organization_id", ORGANIZATION_ID);
+      await supabase.from("organization_memberships").delete().eq("user_id", userId).eq("organization_id", (await requireActiveSchoolId()));
       await supabase.auth.admin.deleteUser(userId);
       throw activityError;
     }

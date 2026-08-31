@@ -1,4 +1,5 @@
-import { getServiceRoleClient, ORGANIZATION_ID } from "@/lib/supabase/service";
+import { getServiceRoleClient } from "@/lib/supabase/service";
+import { requireActiveSchoolId } from "@/lib/schools/context";
 import { toDateKey } from "./attendance-repo";
 
 /** Monday-to-Sunday, matching Postgres's date_trunc('week', ...) used by the
@@ -40,7 +41,7 @@ async function logRosterAudit(entry: {
 }): Promise<void> {
   const supabase = getServiceRoleClient();
   const { error } = await supabase.from("weekly_roster_audit_log").insert({
-    organization_id: ORGANIZATION_ID,
+    organization_id: (await requireActiveSchoolId()),
     action: entry.action,
     actor_id: entry.actorId,
     week_start: entry.weekStart,
@@ -86,7 +87,7 @@ export async function wasWeekEverActivated(weekStart: string): Promise<boolean> 
     supabase
       .from("weekly_roster_audit_log")
       .select("created_at")
-      .eq("organization_id", ORGANIZATION_ID)
+      .eq("organization_id", (await requireActiveSchoolId()))
       .eq("week_start", weekStart)
       .in("action", ROSTER_POPULATE_ACTIONS as unknown as string[])
       .gt("rows_affected", 0)
@@ -96,7 +97,7 @@ export async function wasWeekEverActivated(weekStart: string): Promise<boolean> 
     supabase
       .from("weekly_roster_audit_log")
       .select("created_at")
-      .eq("organization_id", ORGANIZATION_ID)
+      .eq("organization_id", (await requireActiveSchoolId()))
       .eq("week_start", weekStart)
       .in("action", ROSTER_CLEAR_ACTIONS as unknown as string[])
       .order("created_at", { ascending: false })
@@ -137,7 +138,7 @@ export async function getRosterForWeek(weekStart: string): Promise<RosterEntry[]
   const { data, error } = await supabase
     .from("weekly_roster")
     .select("id, child_id, activity_id, week_start, week_end")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("week_start", weekStart)
     .eq("active", true);
   if (error) throw error;
@@ -149,7 +150,7 @@ export async function isChildInRoster(childId: string, activityId: string, weekS
   const { data, error } = await supabase
     .from("weekly_roster")
     .select("id")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("child_id", childId)
     .eq("activity_id", activityId)
     .eq("week_start", weekStart)
@@ -169,7 +170,7 @@ export async function addToRoster(childId: string, activityId: string, weekStart
   const supabase = getServiceRoleClient();
   const { error } = await supabase.from("weekly_roster").upsert(
     {
-      organization_id: ORGANIZATION_ID,
+      organization_id: (await requireActiveSchoolId()),
       child_id: childId,
       activity_id: activityId,
       week_start: weekStart,
@@ -177,7 +178,7 @@ export async function addToRoster(childId: string, activityId: string, weekStart
       active: true,
       created_by: createdBy,
     },
-    { onConflict: "child_id,week_start" },
+    { onConflict: "organization_id,child_id,week_start" },
   );
   if (error) throw error;
   await logRosterAudit({ action: "ADD", actorId: createdBy, weekStart, weekEnd, activityId, rowsAffected: 1 });
@@ -190,7 +191,7 @@ export async function removeFromRoster(childId: string, weekStart: string, remov
   const { data, error } = await supabase
     .from("weekly_roster")
     .delete()
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("child_id", childId)
     .eq("week_start", weekStart)
     .select("id, activity_id");
@@ -210,7 +211,7 @@ export async function resetRosterForActivityWeek(activityId: string, weekStart: 
   const { data, error } = await supabase
     .from("weekly_roster")
     .delete()
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("activity_id", activityId)
     .eq("week_start", weekStart)
     .select("id");
@@ -227,12 +228,13 @@ export async function duplicateRosterWeek(fromWeekStart: string, toWeekStart: st
   assertScope("fromWeekStart", fromWeekStart);
   assertScope("toWeekStart", toWeekStart);
   const supabase = getServiceRoleClient();
+  const schoolId = await requireActiveSchoolId();
   const [source, existingTarget] = await Promise.all([getRosterForWeek(fromWeekStart), getRosterForWeek(toWeekStart)]);
   const alreadyPresent = new Set(existingTarget.map((r) => r.childId));
   const toInsert = source
     .filter((r) => !alreadyPresent.has(r.childId))
     .map((r) => ({
-      organization_id: ORGANIZATION_ID,
+      organization_id: schoolId,
       child_id: r.childId,
       activity_id: r.activityId,
       week_start: toWeekStart,
@@ -264,8 +266,9 @@ export async function bulkAddToRoster(
   assertScope("weekStart", weekStart);
   if (entries.length === 0) return;
   const supabase = getServiceRoleClient();
+  const schoolId = await requireActiveSchoolId();
   const rows = entries.map((e) => ({
-    organization_id: ORGANIZATION_ID,
+    organization_id: schoolId,
     child_id: e.childId,
     activity_id: e.activityId,
     week_start: weekStart,
@@ -273,7 +276,7 @@ export async function bulkAddToRoster(
     active: true,
     created_by: createdBy,
   }));
-  const { error } = await supabase.from("weekly_roster").upsert(rows, { onConflict: "child_id,week_start" });
+  const { error } = await supabase.from("weekly_roster").upsert(rows, { onConflict: "organization_id,child_id,week_start" });
   if (error) throw error;
   await logRosterAudit({ action, actorId: createdBy, weekStart, weekEnd, rowsAffected: rows.length });
 }

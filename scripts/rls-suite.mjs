@@ -271,7 +271,7 @@ async function main() {
           c,
           `insert into attendance (organization_id, child_id, activity_id, date, arrived, recorded_by)
            values ($1, $2, $3, current_date + interval '30 days', true, $4)
-           on conflict (child_id, date) do update set arrived = true
+           on conflict (organization_id, child_id, date) do update set arrived = true
            returning id`,
           [activity.organization_id, ownChildId, activity.id, activity.monitor_id],
         );
@@ -285,7 +285,7 @@ async function main() {
           c,
           `insert into attendance (organization_id, child_id, activity_id, date, arrived, recorded_by)
            values ($1, $2, $3, current_date + interval '31 days', true, $4)
-           on conflict (child_id, date) do update set arrived = true
+           on conflict (organization_id, child_id, date) do update set arrived = true
            returning id`,
           [otherActivities[0].organization_id, otherChildId, otherActivities[0].id, activity.monitor_id],
         );

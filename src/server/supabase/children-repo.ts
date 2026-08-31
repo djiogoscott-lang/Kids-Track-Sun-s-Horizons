@@ -1,4 +1,5 @@
-import { getServiceRoleClient, ORGANIZATION_ID } from "@/lib/supabase/service";
+import { getServiceRoleClient } from "@/lib/supabase/service";
+import { requireActiveSchoolId } from "@/lib/schools/context";
 
 export interface SupabaseChild {
   id: string;
@@ -40,7 +41,7 @@ function mapRow(row: ChildRow): SupabaseChild {
 
 export async function getChildren(): Promise<SupabaseChild[]> {
   const supabase = getServiceRoleClient();
-  const { data, error } = await supabase.from("children").select("*").eq("organization_id", ORGANIZATION_ID);
+  const { data, error } = await supabase.from("children").select("*").eq("organization_id", (await requireActiveSchoolId()));
   if (error) throw error;
   return data.map(mapRow);
 }
@@ -50,7 +51,7 @@ export async function getChild(childId: string): Promise<SupabaseChild | undefin
   const { data, error } = await supabase
     .from("children")
     .select("*")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("id", childId)
     .maybeSingle();
   if (error) throw error;
@@ -71,7 +72,7 @@ export async function createChild(input: NewSupabaseChildInput): Promise<Supabas
   const { data, error } = await supabase
     .from("children")
     .insert({
-      organization_id: ORGANIZATION_ID,
+      organization_id: (await requireActiveSchoolId()),
       first_name: input.firstName,
       last_name: input.lastName,
       activity_id: input.activityId,
@@ -93,11 +94,12 @@ export async function createChild(input: NewSupabaseChildInput): Promise<Supabas
 export async function bulkCreateChildren(inputs: NewSupabaseChildInput[]): Promise<SupabaseChild[]> {
   if (inputs.length === 0) return [];
   const supabase = getServiceRoleClient();
+  const schoolId = await requireActiveSchoolId();
   const { data, error } = await supabase
     .from("children")
     .insert(
       inputs.map((input) => ({
-        organization_id: ORGANIZATION_ID,
+        organization_id: schoolId,
         first_name: input.firstName,
         last_name: input.lastName,
         activity_id: input.activityId,
@@ -126,7 +128,7 @@ export async function updateChild(childId: string, update: SupabaseChildUpdate):
   const { data, error } = await supabase
     .from("children")
     .update(patch)
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("id", childId)
     .select("*")
     .maybeSingle();
@@ -162,7 +164,7 @@ export async function bulkDeleteChildrenPermanently(childIds: string[]): Promise
   if (childIds.length === 0) return { deletedIds: [], blocked: [] };
   const supabase = getServiceRoleClient();
   const { data, error } = await supabase.rpc("bulk_delete_children", {
-    p_organization_id: ORGANIZATION_ID,
+    p_organization_id: (await requireActiveSchoolId()),
     p_child_ids: childIds,
   });
   if (error) throw error;
@@ -187,7 +189,7 @@ export async function deleteChildPermanently(childId: string): Promise<void> {
   const { data: attendanceRows, error: attendanceError } = await supabase
     .from("attendance")
     .select("id, arrived, departed")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("child_id", childId);
   if (attendanceError) throw attendanceError;
 
@@ -202,12 +204,12 @@ export async function deleteChildPermanently(childId: string): Promise<void> {
     const { error: cleanupError } = await supabase
       .from("attendance")
       .delete()
-      .eq("organization_id", ORGANIZATION_ID)
+      .eq("organization_id", (await requireActiveSchoolId()))
       .eq("child_id", childId);
     if (cleanupError) throw cleanupError;
   }
 
-  const { error } = await supabase.from("children").delete().eq("organization_id", ORGANIZATION_ID).eq("id", childId);
+  const { error } = await supabase.from("children").delete().eq("organization_id", (await requireActiveSchoolId())).eq("id", childId);
   if (error) {
     if (error.code === "23503") {
       // Real attendance history was already ruled out above (and any

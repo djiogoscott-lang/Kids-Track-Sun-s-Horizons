@@ -1,4 +1,5 @@
-import { getServiceRoleClient, ORGANIZATION_ID } from "@/lib/supabase/service";
+import { getServiceRoleClient } from "@/lib/supabase/service";
+import { requireActiveSchoolId } from "@/lib/schools/context";
 
 export interface OperationalResetCounts {
   attendance: number;
@@ -13,10 +14,10 @@ export interface OperationalResetCounts {
 export async function getOperationalResetPreview(): Promise<OperationalResetCounts> {
   const supabase = getServiceRoleClient();
   const [attendance, activityDayState, weeklyRoster, notifications] = await Promise.all([
-    supabase.from("attendance").select("id", { count: "exact", head: true }).eq("organization_id", ORGANIZATION_ID),
-    supabase.from("activity_day_state").select("id", { count: "exact", head: true }).eq("organization_id", ORGANIZATION_ID),
-    supabase.from("weekly_roster").select("id", { count: "exact", head: true }).eq("organization_id", ORGANIZATION_ID),
-    supabase.from("notifications").select("id", { count: "exact", head: true }).eq("organization_id", ORGANIZATION_ID),
+    supabase.from("attendance").select("id", { count: "exact", head: true }).eq("organization_id", (await requireActiveSchoolId())),
+    supabase.from("activity_day_state").select("id", { count: "exact", head: true }).eq("organization_id", (await requireActiveSchoolId())),
+    supabase.from("weekly_roster").select("id", { count: "exact", head: true }).eq("organization_id", (await requireActiveSchoolId())),
+    supabase.from("notifications").select("id", { count: "exact", head: true }).eq("organization_id", (await requireActiveSchoolId())),
   ]);
   for (const r of [attendance, activityDayState, weeklyRoster, notifications]) {
     if (r.error) throw r.error;
@@ -42,7 +43,7 @@ export async function getOperationalResetPreview(): Promise<OperationalResetCoun
 export async function resetOperationalData(actorId: string | null): Promise<OperationalResetCounts> {
   const supabase = getServiceRoleClient();
   const { data, error } = await supabase.rpc("reset_operational_data", {
-    p_organization_id: ORGANIZATION_ID,
+    p_organization_id: (await requireActiveSchoolId()),
     p_actor_id: actorId,
   });
   if (error) throw error;

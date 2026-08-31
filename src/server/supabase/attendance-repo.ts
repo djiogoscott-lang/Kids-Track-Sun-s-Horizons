@@ -1,4 +1,5 @@
-import { getServiceRoleClient, ORGANIZATION_ID } from "@/lib/supabase/service";
+import { getServiceRoleClient } from "@/lib/supabase/service";
+import { requireActiveSchoolId } from "@/lib/schools/context";
 import type { PresenceRecord } from "@/features/presence/domain/types";
 
 /** Attendance dates are calendar dates in the org's timezone, not UTC — a
@@ -39,7 +40,7 @@ export async function getAttendanceMapForDate(date: Date, activityId?: string): 
   let query = supabase
     .from("attendance")
     .select(ATTENDANCE_COLUMNS)
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("date", toDateKey(date));
   if (activityId) query = query.eq("activity_id", activityId);
   const { data, error } = await query;
@@ -107,7 +108,7 @@ export async function upsertAttendance(
     const { data, error: fetchError } = await supabase
       .from("attendance")
       .select("arrived, arrived_at, departed, departed_at, daycare_manual")
-      .eq("organization_id", ORGANIZATION_ID)
+      .eq("organization_id", (await requireActiveSchoolId()))
       .eq("child_id", childId)
       .eq("date", dateKey)
       .maybeSingle();
@@ -116,7 +117,7 @@ export async function upsertAttendance(
   }
 
   const row = {
-    organization_id: ORGANIZATION_ID,
+    organization_id: (await requireActiveSchoolId()),
     child_id: childId,
     activity_id: activityId,
     date: dateKey,
@@ -130,7 +131,7 @@ export async function upsertAttendance(
     daycare_manual: patch.daycareManual !== undefined ? patch.daycareManual : (existing?.daycare_manual ?? false),
   };
 
-  const { error } = await supabase.from("attendance").upsert(row, { onConflict: "child_id,date" });
+  const { error } = await supabase.from("attendance").upsert(row, { onConflict: "organization_id,child_id,date" });
   if (error) throw error;
 }
 
@@ -154,9 +155,10 @@ export async function bulkMarkAbsent(
 ): Promise<void> {
   if (entries.length === 0) return;
   const supabase = getServiceRoleClient();
+  const schoolId = await requireActiveSchoolId();
   const dateKey = toDateKey(date);
   const rows = entries.map((e) => ({
-    organization_id: ORGANIZATION_ID,
+    organization_id: schoolId,
     child_id: e.childId,
     activity_id: e.activityId,
     date: dateKey,
@@ -167,7 +169,7 @@ export async function bulkMarkAbsent(
     departed_at: null,
     daycare_manual: false,
   }));
-  const { error } = await supabase.from("attendance").upsert(rows, { onConflict: "child_id,date", ignoreDuplicates: true });
+  const { error } = await supabase.from("attendance").upsert(rows, { onConflict: "organization_id,child_id,date", ignoreDuplicates: true });
   if (error) throw error;
 }
 
@@ -182,7 +184,7 @@ export async function getAttendanceForDateRange(
   let query = supabase
     .from("attendance")
     .select("child_id, activity_id, date, arrived, arrived_at, departed, departed_at, daycare_manual")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .gte("date", toDateKey(startDate))
     .lte("date", toDateKey(endDate))
     .order("date", { ascending: true });
@@ -197,7 +199,7 @@ export async function getAttendanceForChild(childId: string, limit = 60): Promis
   const { data, error } = await supabase
     .from("attendance")
     .select("child_id, activity_id, date, arrived, arrived_at, departed, departed_at, daycare_manual")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("child_id", childId)
     .order("date", { ascending: false })
     .limit(limit);

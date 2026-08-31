@@ -1,4 +1,5 @@
-import { getServiceRoleClient, ORGANIZATION_ID } from "@/lib/supabase/service";
+import { getServiceRoleClient } from "@/lib/supabase/service";
+import { requireActiveSchoolId } from "@/lib/schools/context";
 
 export interface SupabaseActivity {
   id: string;
@@ -13,7 +14,7 @@ export async function getActivities(): Promise<SupabaseActivity[]> {
   const { data, error } = await supabase
     .from("activities")
     .select("id, name, description, monitor_id, active")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .order("name");
   if (error) throw error;
   return data.map((a) => ({ id: a.id, name: a.name, description: a.description ?? "", monitorId: a.monitor_id, active: a.active }));
@@ -36,11 +37,11 @@ export interface ActivityDependencyCounts {
 export async function getActivityDependencyCounts(activityId: string): Promise<ActivityDependencyCounts> {
   const supabase = getServiceRoleClient();
   const [children, weeklyRoster, attendance, activityDayState, notifications] = await Promise.all([
-    supabase.from("children").select("id", { count: "exact", head: true }).eq("organization_id", ORGANIZATION_ID).eq("activity_id", activityId),
-    supabase.from("weekly_roster").select("id", { count: "exact", head: true }).eq("organization_id", ORGANIZATION_ID).eq("activity_id", activityId),
-    supabase.from("attendance").select("id", { count: "exact", head: true }).eq("organization_id", ORGANIZATION_ID).eq("activity_id", activityId),
-    supabase.from("activity_day_state").select("id", { count: "exact", head: true }).eq("organization_id", ORGANIZATION_ID).eq("activity_id", activityId),
-    supabase.from("notifications").select("id", { count: "exact", head: true }).eq("organization_id", ORGANIZATION_ID).eq("activity_id", activityId),
+    supabase.from("children").select("id", { count: "exact", head: true }).eq("organization_id", (await requireActiveSchoolId())).eq("activity_id", activityId),
+    supabase.from("weekly_roster").select("id", { count: "exact", head: true }).eq("organization_id", (await requireActiveSchoolId())).eq("activity_id", activityId),
+    supabase.from("attendance").select("id", { count: "exact", head: true }).eq("organization_id", (await requireActiveSchoolId())).eq("activity_id", activityId),
+    supabase.from("activity_day_state").select("id", { count: "exact", head: true }).eq("organization_id", (await requireActiveSchoolId())).eq("activity_id", activityId),
+    supabase.from("notifications").select("id", { count: "exact", head: true }).eq("organization_id", (await requireActiveSchoolId())).eq("activity_id", activityId),
   ]);
   for (const r of [children, weeklyRoster, attendance, activityDayState, notifications]) {
     if (r.error) throw r.error;
@@ -66,7 +67,7 @@ export async function createActivity(input: NewActivityInput): Promise<SupabaseA
   const { data, error } = await supabase
     .from("activities")
     .insert({
-      organization_id: ORGANIZATION_ID,
+      organization_id: (await requireActiveSchoolId()),
       name: input.name,
       description: input.description,
       monitor_id: input.monitorId,
@@ -90,7 +91,7 @@ export async function updateActivity(activityId: string, update: ActivityUpdate)
   const { data, error } = await supabase
     .from("activities")
     .update(patch)
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("id", activityId)
     .select("id, name, description, monitor_id, active")
     .single();
@@ -106,7 +107,7 @@ export async function removeActivityMonitor(activityId: string): Promise<void> {
   const { error } = await supabase
     .from("activities")
     .update({ monitor_id: null })
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("id", activityId);
   if (error) throw error;
 }
@@ -126,7 +127,7 @@ export async function deleteActivity(activityId: string): Promise<void> {
     );
   }
   const supabase = getServiceRoleClient();
-  const { error } = await supabase.from("activities").delete().eq("organization_id", ORGANIZATION_ID).eq("id", activityId);
+  const { error } = await supabase.from("activities").delete().eq("organization_id", (await requireActiveSchoolId())).eq("id", activityId);
   if (error) throw error;
 }
 
@@ -143,7 +144,7 @@ export async function getMonitors(): Promise<SupabaseMonitor[]> {
   const { data, error } = await supabase
     .from("organization_memberships")
     .select("user_id, profiles!organization_memberships_user_id_fkey(full_name)")
-    .eq("organization_id", ORGANIZATION_ID)
+    .eq("organization_id", (await requireActiveSchoolId()))
     .eq("role", "MONITOR")
     .is("revoked_at", null);
   if (error) throw error;
@@ -163,7 +164,7 @@ export async function setActivityMonitor(activityId: string, monitorId: string):
   const { data: activities, error } = await supabase
     .from("activities")
     .select("id, monitor_id")
-    .eq("organization_id", ORGANIZATION_ID);
+    .eq("organization_id", (await requireActiveSchoolId()));
   if (error) throw error;
 
   const target = activities.find((a) => a.id === activityId);
@@ -174,7 +175,7 @@ export async function setActivityMonitor(activityId: string, monitorId: string):
     .from("activities")
     .update({ monitor_id: monitorId })
     .eq("id", activityId)
-    .eq("organization_id", ORGANIZATION_ID);
+    .eq("organization_id", (await requireActiveSchoolId()));
   if (assignError) throw assignError;
 
   if (otherActivityWithThisMonitor && previousMonitorOfTarget) {
@@ -182,7 +183,7 @@ export async function setActivityMonitor(activityId: string, monitorId: string):
       .from("activities")
       .update({ monitor_id: previousMonitorOfTarget })
       .eq("id", otherActivityWithThisMonitor.id)
-      .eq("organization_id", ORGANIZATION_ID);
+      .eq("organization_id", (await requireActiveSchoolId()));
     if (swapError) throw swapError;
   }
 }

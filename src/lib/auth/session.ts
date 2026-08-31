@@ -23,20 +23,30 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: membership } = await supabase
+  // Deliberately not maybeSingle(): a user can belong to several schools, and
+  // maybeSingle() errors out on more than one row — which resolved to
+  // `membership = null` and logged multi-school users out entirely. The role
+  // returned here is the one for the school the request is working in; the
+  // same person can be an admin of one school and a monitor in another.
+  const { data: memberships, error } = await supabase
     .from("organization_memberships")
-    .select("role")
+    .select("organization_id, role")
     .eq("user_id", user.id)
-    .is("revoked_at", null)
-    .maybeSingle();
+    .is("revoked_at", null);
+  if (error || !memberships || memberships.length === 0) return null;
 
-  if (!membership) return null;
+  const name = (user.user_metadata?.full_name as string | undefined) ?? user.email ?? "Membre";
 
-  return {
-    id: user.id,
-    name: (user.user_metadata?.full_name as string | undefined) ?? user.email ?? "Membre",
-    role: membership.role as UserRole,
-  };
+  if (memberships.length === 1) {
+    return { id: user.id, name, role: memberships[0].role as UserRole };
+  }
+
+  // Resolving which school is active needs the cookie, and it is validated
+  // against exactly these membership rows — never trusted on its own.
+  const { ACTIVE_SCHOOL_COOKIE } = await import("@/lib/schools/context");
+  const preferred = (await cookies()).get(ACTIVE_SCHOOL_COOKIE)?.value;
+  const active = memberships.find((m) => m.organization_id === preferred) ?? memberships[0];
+  return { id: user.id, name, role: active.role as UserRole };
 }
 
 /**

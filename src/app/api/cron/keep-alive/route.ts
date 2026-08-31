@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isSupabaseConfigured } from "@/lib/env";
-import { getServiceRoleClient, ORGANIZATION_ID } from "@/lib/supabase/service";
+import { getServiceRoleClient, BOOTSTRAP_ORGANIZATION_ID } from "@/lib/supabase/service";
 
 /**
  * Supabase's free tier pauses a project after 7 days with no activity. This
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   }
 
   const supabase = getServiceRoleClient();
-  const { error } = await supabase.from("organizations").select("id").eq("id", ORGANIZATION_ID).limit(1);
+  const { error } = await supabase.from("organizations").select("id").eq("id", BOOTSTRAP_ORGANIZATION_ID).limit(1);
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
