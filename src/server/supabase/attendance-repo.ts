@@ -106,6 +106,43 @@ export async function upsertAttendance(
   if (error) throw error;
 }
 
+/**
+ * Bulk "mark these children absent for this date" — used by closure to
+ * finalize the roll call. Unlike upsertAttendance this needs no
+ * read-then-merge pass: every target here is by definition a child with NO
+ * existing row for the date (an untouched child), so there is nothing to
+ * preserve and a single multi-row insert is both correct and one round trip
+ * instead of two per child.
+ *
+ * onConflict is still specified defensively: if a monitor marks one of these
+ * children in the instant between the caller's read and this write, the
+ * ignoreDuplicates option keeps their real action rather than overwriting it
+ * with "absent" — the race resolves in favour of the explicit human action.
+ */
+export async function bulkMarkAbsent(
+  entries: Array<{ childId: string; activityId: string }>,
+  date: Date,
+  recordedBy: string | null,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const supabase = getServiceRoleClient();
+  const dateKey = toDateKey(date);
+  const rows = entries.map((e) => ({
+    organization_id: ORGANIZATION_ID,
+    child_id: e.childId,
+    activity_id: e.activityId,
+    date: dateKey,
+    recorded_by: recordedBy,
+    arrived: false,
+    arrived_at: null,
+    departed: false,
+    departed_at: null,
+    daycare_manual: false,
+  }));
+  const { error } = await supabase.from("attendance").upsert(rows, { onConflict: "child_id,date", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
 /** One row per (child, date) across a range — used for weekly summaries and
  * per-child history, where per-day queries would be far too chatty. */
 export async function getAttendanceForDateRange(

@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addChildToRosterAction } from "@/features/presence/ui/actions";
+import { addChildToRosterAction, createChildAndAddToRosterAction } from "@/features/presence/ui/actions";
 
 export interface RosterCandidateChild {
   id: string;
@@ -62,6 +62,36 @@ export function AddToRosterDialog({
     });
   }
 
+  /** Splits the search box text into a first/last name guess so the admin
+   * usually only has to confirm — typing the full name to search for someone
+   * who turns out not to exist yet is the exact moment this is needed. */
+  const [newFirstName, newLastName] = useMemo(() => {
+    const parts = search.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return ["", ""];
+    if (parts.length === 1) return [parts[0], ""];
+    return [parts[0], parts.slice(1).join(" ")];
+  }, [search]);
+
+  const [creatingFirst, setCreatingFirst] = useState<string | null>(null);
+  const [creatingLast, setCreatingLast] = useState<string | null>(null);
+  const effectiveFirst = creatingFirst ?? newFirstName;
+  const effectiveLast = creatingLast ?? newLastName;
+
+  function createAndAdd() {
+    setError(null);
+    startTransition(async () => {
+      const result = await createChildAndAddToRosterAction(effectiveFirst, effectiveLast, activityId, weekStart);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      setSearch("");
+      setCreatingFirst(null);
+      setCreatingLast(null);
+      router.refresh();
+    });
+  }
+
   return (
     <>
       <button
@@ -88,7 +118,41 @@ export function AddToRosterDialog({
 
           <ul className="mt-4 max-h-80 space-y-1.5 overflow-y-auto">
             {filtered.length === 0 ? (
-              <li className="py-6 text-center text-sm text-[var(--muted)]">Aucun enfant trouvé.</li>
+              <li className="rounded-xl border border-dashed border-[var(--border)] p-4">
+                <p className="text-center text-sm text-[var(--muted)]">Aucun enfant trouvé.</p>
+                {search.trim() ? (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs font-semibold text-[var(--foreground)]">Créer cet enfant et l&apos;ajouter à {activityName} :</p>
+                    <div className="flex gap-2">
+                      <input
+                        value={effectiveFirst}
+                        onChange={(e) => setCreatingFirst(e.target.value)}
+                        placeholder="Prénom"
+                        aria-label="Prénom du nouvel enfant"
+                        className="h-10 w-full rounded-lg border border-[var(--border)] bg-white px-2.5 text-sm"
+                      />
+                      <input
+                        value={effectiveLast}
+                        onChange={(e) => setCreatingLast(e.target.value)}
+                        placeholder="Nom"
+                        aria-label="Nom du nouvel enfant"
+                        className="h-10 w-full rounded-lg border border-[var(--border)] bg-white px-2.5 text-sm"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isPending || !effectiveFirst.trim() || !effectiveLast.trim()}
+                      onClick={createAndAdd}
+                      className="tap-scale h-11 w-full rounded-lg bg-[var(--primary)] text-xs font-bold text-white disabled:bg-slate-200 disabled:text-[var(--muted)]"
+                    >
+                      {isPending ? "Création…" : "+ Créer et ajouter"}
+                    </button>
+                    <p className="text-[10px] text-[var(--muted)]">
+                      L&apos;enfant est ajouté à la base permanente et au roster de la semaine. Aucune présence n&apos;est marquée automatiquement.
+                    </p>
+                  </div>
+                ) : null}
+              </li>
             ) : (
               filtered.map((child) => {
                 const already = inRosterSet.has(child.id);

@@ -3,6 +3,7 @@ import {
   addToRosterRecord,
   bulkAddToRosterRecord,
   bulkCreateChildRecords,
+  bulkMarkAbsentRecords,
   closeDay,
   createAccountRecord,
   createActivityRecord,
@@ -246,9 +247,13 @@ export async function closeActivityDay(activityId: string, closedByUserId: strin
   const unmarked = children.filter(
     (c) => c.active && !records.has(c.id) && (rosterChildIds === null ? c.activityId === activityId : rosterChildIds.has(c.id)),
   );
-  for (const child of unmarked) {
-    await setAttendance(child.id, activityId, now, { arrived: false, arrivedAt: null, departed: false, departedAt: null }, closedByUserId);
-  }
+  // One batched write, not one (read + write) per child: closing a 30-child
+  // activity used to cost 60 sequential round trips.
+  await bulkMarkAbsentRecords(
+    unmarked.map((c) => ({ childId: c.id, activityId })),
+    now,
+    closedByUserId,
+  );
 
   await closeDay(activityId, now, closedByUserId, closedByName);
 }

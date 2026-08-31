@@ -297,6 +297,35 @@ export async function setAttendance(
   return supaAttendance.upsertAttendance(childId, activityId, date, patch, realRecordedBy);
 }
 
+/** Batch equivalent of setAttendance for the closure roll-call finalization
+ * — one round trip for the whole activity instead of two per child. */
+export async function bulkMarkAbsentRecords(
+  entries: Array<{ childId: string; activityId: string }>,
+  date: Date,
+  recordedBy: string | null,
+): Promise<void> {
+  if (entries.length === 0) return;
+  if (!isSupabaseConfigured) {
+    const records = await getDemoPresenceRecords();
+    for (const e of entries) {
+      const existing = records.get(e.childId);
+      if (existing) continue; // same "explicit action wins" rule as the Supabase path
+      records.set(e.childId, {
+        childId: e.childId,
+        activityId: e.activityId,
+        arrived: false,
+        arrivedAt: null,
+        left: false,
+        leftAt: null,
+        daycareManual: false,
+      });
+    }
+    return;
+  }
+  const realRecordedBy = recordedBy ? await resolveRealUserId(recordedBy) : null;
+  return supaAttendance.bulkMarkAbsent(entries, date, realRecordedBy);
+}
+
 export interface DateAttendanceRow extends PresenceRecord {
   date: string;
 }

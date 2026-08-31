@@ -359,6 +359,33 @@ export async function addChildToRosterAction(childId: string, activityId: string
   return result;
 }
 
+/**
+ * Create a brand-new child AND enrol them in one step, for the common
+ * "this participant isn't in the directory yet" case during weekly roster
+ * setup — previously the admin had to leave the roster page, create the
+ * child under Enfants, come back, and search for them.
+ *
+ * The child is created against the same activity they're being enrolled
+ * into, so their permanent children.activityId reference and their roster
+ * entry agree from the start. No attendance row is ever seeded: the child
+ * begins the day NOT_MARKED like everyone else.
+ */
+export async function createChildAndAddToRosterAction(
+  firstName: string,
+  lastName: string,
+  activityId: string,
+  weekStart: string,
+  daycareAuto = false,
+): Promise<ActionResult> {
+  const admin = await requireUser("ADMIN");
+  return toResult(async () => {
+    const child = await createChild({ firstName, lastName, activityId, daycareAuto, notes: "" });
+    await addChildToRoster(child.id, activityId, weekStart, admin.id);
+    revalidateRosterViews();
+    revalidatePath("/admin/children");
+  });
+}
+
 export async function removeChildFromRosterAction(childId: string, weekStart: string): Promise<ActionResult> {
   const admin = await requireUser("ADMIN");
   const result = await toResult(() => removeChildFromRoster(childId, weekStart, admin.id));

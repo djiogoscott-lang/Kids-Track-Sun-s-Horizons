@@ -61,26 +61,34 @@ function assertScope(field: string, value: string | null | undefined): asserts v
 /**
  * Compares the most recent "populated" event (add/import/duplicate/
  * backfill with at least one row) against the most recent "cleared"
- * event (a per-activity RESET, or the org-wide operational reset — both
- * log a RESET row here) for this week. Only a populate strictly more
- * recent than any reset counts as "still activated" — this is what tells
- * "no roster was ever created for this week" and "this week was
- * populated but has since been legitimately cleared" (both expected,
- * safe to fall back to legacy children.activityId) apart from "a roster
- * existed and is now empty with no clearing event to explain it"
- * (anomalous, must not be silently masked). Without this comparison, any
- * week ever populated would be flagged anomalous forever after a
- * legitimate reset, since the old populate row never goes away.
+ * event for this week. Only a populate strictly more recent than the last
+ * clearing counts as "still activated" — this is what tells "no roster was
+ * ever created for this week" and "this week was populated but has since
+ * been legitimately emptied" (both expected, safe to fall back to legacy
+ * children.activityId) apart from "a roster existed and is now empty with
+ * no logged operation to explain it" (anomalous, must not be silently
+ * masked). Without this comparison, any week ever populated would be
+ * flagged anomalous forever after a legitimate reset, since the old
+ * populate row never goes away.
+ *
+ * "Cleared" deliberately counts REMOVE alongside RESET: emptying a week by
+ * clicking "Retirer" on the last participant one at a time is just as
+ * legitimate an emptying as hitting "Réinitialiser la liste", and only
+ * RESET was counted before — so an admin who removed participants
+ * individually got a permanent false anomaly banner on that week.
  */
+const ROSTER_POPULATE_ACTIONS = ["ADD", "IMPORT", "DUPLICATE", "BACKFILL"] as const;
+const ROSTER_CLEAR_ACTIONS = ["RESET", "REMOVE"] as const;
+
 export async function wasWeekEverActivated(weekStart: string): Promise<boolean> {
   const supabase = getServiceRoleClient();
-  const [populate, reset] = await Promise.all([
+  const [populate, cleared] = await Promise.all([
     supabase
       .from("weekly_roster_audit_log")
       .select("created_at")
       .eq("organization_id", ORGANIZATION_ID)
       .eq("week_start", weekStart)
-      .in("action", ["ADD", "IMPORT", "DUPLICATE", "BACKFILL"])
+      .in("action", ROSTER_POPULATE_ACTIONS as unknown as string[])
       .gt("rows_affected", 0)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -90,16 +98,16 @@ export async function wasWeekEverActivated(weekStart: string): Promise<boolean> 
       .select("created_at")
       .eq("organization_id", ORGANIZATION_ID)
       .eq("week_start", weekStart)
-      .eq("action", "RESET")
+      .in("action", ROSTER_CLEAR_ACTIONS as unknown as string[])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
   ]);
   if (populate.error) throw populate.error;
-  if (reset.error) throw reset.error;
+  if (cleared.error) throw cleared.error;
   if (!populate.data) return false;
-  if (!reset.data) return true;
-  return new Date(populate.data.created_at) > new Date(reset.data.created_at);
+  if (!cleared.data) return true;
+  return new Date(populate.data.created_at) > new Date(cleared.data.created_at);
 }
 
 export interface RosterWeekStatus {

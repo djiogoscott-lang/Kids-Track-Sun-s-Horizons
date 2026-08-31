@@ -102,7 +102,7 @@ export function ClosureControl({
             </p>
             {counts.notMarkedCount > 0 ? (
               <p className="mt-2 rounded-xl bg-[var(--warning-bg)] px-3 py-2 text-sm font-semibold text-[#8a5a12]">
-                ⚪ {counts.notMarkedCount} enfant{counts.notMarkedCount > 1 ? "s" : ""} non traité{counts.notMarkedCount > 1 ? "s" : ""} sera{counts.notMarkedCount > 1 ? "ont" : ""} automatiquement marqué{counts.notMarkedCount > 1 ? "s" : ""} absent{counts.notMarkedCount > 1 ? "s" : ""} à la clôture.
+                ⚪ {counts.notMarkedCount} enfant{counts.notMarkedCount > 1 ? "s" : ""} non traité{counts.notMarkedCount > 1 ? "s" : ""} {counts.notMarkedCount > 1 ? "seront" : "sera"} automatiquement marqué{counts.notMarkedCount > 1 ? "s" : ""} absent{counts.notMarkedCount > 1 ? "s" : ""} à la clôture.
               </p>
             ) : null}
 
