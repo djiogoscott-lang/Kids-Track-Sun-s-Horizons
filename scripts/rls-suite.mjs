@@ -77,7 +77,14 @@ async function main() {
 
   // --- Setup: read real state with full (service-role) visibility ---
   const { rows: activities } = await client.query("select id, name, monitor_id, organization_id from activities order by name");
-  const byName = Object.fromEntries(activities.map((a) => [a.name, a]));
+  if (activities.length === 0) {
+    console.error("No activities exist — the suite needs at least one to probe against. Aborting.");
+    process.exit(1);
+  }
+  // Any activity works for the admin write/scope probes. Picked positionally
+  // on purpose: naming one made the suite crash the moment an admin renamed
+  // it, and each school defines its own activities.
+  const anyActivity = activities[0];
 
   const { rows: memberships } = await client.query(
     `select m.user_id, m.role, m.revoked_at, u.email
@@ -141,7 +148,7 @@ async function main() {
     const mem = await c.query("select id from organization_memberships");
     check("admin: sees all memberships", mem.rows.length === memberships.length, `got ${mem.rows.length}, expected ${memberships.length}`);
 
-    const upd = await c.query("update activities set name = name where id = $1 returning id", [byName["Danse"].id]);
+    const upd = await c.query("update activities set name = name where id = $1 returning id", [anyActivity.id]);
     check("admin: can write to activities", upd.rowCount === 1);
 
     // An empty children table is a legitimate state (a fresh season starts
@@ -152,7 +159,7 @@ async function main() {
     const probeChild = await c.query(
       `insert into children (organization_id, first_name, last_name, activity_id)
        values ($1, 'RlsProbe', 'Child', $2) returning id`,
-      [byName["Danse"].organization_id, byName["Danse"].id],
+      [anyActivity.organization_id, anyActivity.id],
     );
     check("admin: can create children", probeChild.rowCount === 1, `rowCount=${probeChild.rowCount}`);
     const updChild = await c.query("update children set notes = notes where id = $1 returning id", [probeChild.rows[0].id]);
@@ -171,7 +178,7 @@ async function main() {
       c,
       `insert into weekly_roster_audit_log (organization_id, action, week_start, rows_affected)
        values ($1, 'ADD', current_date, 0) returning id`,
-      [byName["Danse"].organization_id],
+      [anyActivity.organization_id],
     );
     check("admin: cannot insert into weekly_roster_audit_log (service-role only)", auditInsert.denied, `rowCount=${auditInsert.rowCount}`);
 
@@ -181,30 +188,34 @@ async function main() {
     const resetLogInsert = await attemptWrite(
       c,
       `insert into operational_reset_log (organization_id, attendance_rows) values ($1, 0) returning id`,
-      [byName["Danse"].organization_id],
+      [anyActivity.organization_id],
     );
     check("admin: cannot insert into operational_reset_log (service-role only)", resetLogInsert.denied, `rowCount=${resetLogInsert.rowCount}`);
 
-    const resetRpc = await attemptWrite(c, `select public.reset_operational_data($1, null)`, [byName["Danse"].organization_id]);
+    const resetRpc = await attemptWrite(c, `select public.reset_operational_data($1, null)`, [anyActivity.organization_id]);
     check("admin: cannot call reset_operational_data directly (service-role only)", resetRpc.denied, `rowCount=${resetRpc.rowCount}`);
   });
 
   // -------------------------------------------------------------------
   // 3. Named assignment check (business expectation, not just RLS)
   // -------------------------------------------------------------------
-  const expectedAssignment = [
-    ["Danse", "moniteur1@sunshorizons.be"],
-    ["Multisport", "moniteur2@sunshorizons.be"],
-    ["Vélo", "moniteur3@sunshorizons.be"],
-    // Confirmed by the project owner (2026-08-29): djiogoscott@gmail.com is
-    // the real, intended monitor of Baby Tennis — moniteur4@sunshorizons.be
-    // is a spare seeded account with no activity, not a pending assignment.
-    ["Baby Tennis", "djiogoscott@gmail.com"],
-  ];
-  for (const [activityName, expectedEmail] of expectedAssignment) {
-    const actual = monitorEmailOf(byName[activityName].monitor_id);
-    check(`assignment: ${activityName} -> ${expectedEmail}`, actual === expectedEmail, `actual monitor: ${actual}`);
+  // Reports the live assignments rather than asserting a fixed list. An
+  // earlier version hardcoded four activity names and crashed outright the
+  // moment the admin renamed one — this suite must survive the schools
+  // feature, where every school defines its own activities. What is actually
+  // worth asserting is the invariant, checked below: no monitor may hold two
+  // activities, which is what the per-school unique index guarantees.
+  console.log("Live assignments:");
+  for (const a of activities) {
+    console.log(`  ${a.name} -> ${monitorEmailOf(a.monitor_id)}`);
   }
+
+  const assignedMonitors = activities.filter((a) => a.monitor_id).map((a) => a.monitor_id);
+  check(
+    "assignment: no monitor holds two activities in the same school",
+    new Set(assignedMonitors).size === assignedMonitors.length,
+    `${assignedMonitors.length} assignments, ${new Set(assignedMonitors).size} distinct monitors`,
+  );
 
   // -------------------------------------------------------------------
   // 4. Each monitor currently assigned to an activity = scoped to that
@@ -349,19 +360,21 @@ async function main() {
   // -------------------------------------------------------------------
   // 6. Revoked-membership regression (the historical is_activity_monitor
   //    privilege-escalation fix) — reassigns a real activity's monitor_id
-  //    IN-TRANSACTION ONLY, always rolled back, so Vélo's real assignment
-  //    to moniteur3 is untouched after this test.
+  //    IN-TRANSACTION ONLY, always rolled back, so the borrowed activity's
+  //    real assignment is untouched after this test. The activity is picked
+  //    from whatever exists rather than named, so renaming activities (or
+  //    running against a different school) cannot break this test.
   // -------------------------------------------------------------------
   {
-    const velo = byName["Vélo"];
+    const borrowed = activities[0];
     const testSubject = unassignedMonitor ?? Object.values(monitorByEmail)[0];
     await client.query("begin");
     try {
-      await client.query("update activities set monitor_id = $1 where id = $2", [testSubject.user_id, velo.id]);
+      await client.query("update activities set monitor_id = $1 where id = $2", [testSubject.user_id, borrowed.id]);
       await client.query("update organization_memberships set revoked_at = now() where user_id = $1", [testSubject.user_id]);
       await client.query("select set_config('role', 'authenticated', true)");
       await client.query("select set_config('request.jwt.claims', $1, true)", [claim(testSubject.user_id)]);
-      const acts = await client.query("select id from activities where id = $1", [velo.id]);
+      const acts = await client.query("select id from activities where id = $1", [borrowed.id]);
       check("revoked monitor: denied access despite matching monitor_id", acts.rows.length === 0, `got ${acts.rows.length}`);
     } finally {
       await client.query("rollback");

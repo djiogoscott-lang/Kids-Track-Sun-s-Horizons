@@ -1,4 +1,4 @@
-import { Bell, ClipboardCheck, ClipboardList, DoorOpen, History, Home, Settings, Shuffle, Trophy, Users2 } from "lucide-react";
+import { Bell, ClipboardCheck, ClipboardList, DoorOpen, History, Home, School, Settings, Shuffle, Trophy, Users2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
@@ -10,8 +10,10 @@ import { ADMIN_STEPS, MONITOR_STEPS } from "@/features/onboarding/steps";
 import { NotificationsProvider } from "@/features/notifications/notifications-provider";
 import { getActivityIdForMonitor, getAllNotificationsForAdmin, getNotificationsForMonitor } from "@/features/presence/application/queries";
 import { AdminLiveSync } from "@/features/presence/ui/admin-live-sync";
+import { SchoolSwitcher } from "@/features/schools/school-switcher";
 import { signOutAction } from "@/lib/auth/actions";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getActiveSchoolId, getUserSchools } from "@/lib/schools/context";
 
 const ADMIN_LINKS = [
   { href: "/admin/children", label: "Enfants", icon: Users2, tourId: "nav-children" },
@@ -19,6 +21,7 @@ const ADMIN_LINKS = [
   { href: "/activities", label: "Activités", icon: Trophy },
   { href: "/admin/monitors", label: "Moniteurs", icon: Shuffle, tourId: "nav-monitors" },
   { href: "/admin/activities", label: "Gestion activités", icon: Settings },
+  { href: "/admin/schools", label: "Écoles", icon: School },
   { href: "/admin/presences", label: "Présences", icon: ClipboardCheck, tourId: "nav-presences" },
   { href: "/admin/departures", label: "Départs", icon: DoorOpen },
   { href: "/garderie", label: "Garderie", icon: Home, tourId: "nav-garderie" },
@@ -29,6 +32,9 @@ const ADMIN_LINKS = [
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+
+  const [userSchools, activeSchoolId] = await Promise.all([getUserSchools(), getActiveSchoolId()]);
+  const schoolOptions = userSchools.map((s) => ({ schoolId: s.schoolId, name: s.name, active: s.active }));
 
   const monitorActivityId = user.role === "MONITOR" ? await getActivityIdForMonitor(user.id) : null;
   const rawNotifications =
@@ -71,6 +77,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           ) : null}
 
           <div className="flex items-center gap-3">
+            {/* Renders nothing for a user with a single school — see the
+                component. Everything on screen is scoped to whichever school
+                is selected here. */}
+            <SchoolSwitcher schools={schoolOptions} activeSchoolId={activeSchoolId} />
             <div className="hidden text-right leading-tight sm:block">
               <p className="text-sm font-semibold text-[var(--foreground)]">{user.name}</p>
               <p className="text-xs text-[var(--muted)]">{user.role === "ADMIN" ? "Administrateur" : "Moniteur"}</p>

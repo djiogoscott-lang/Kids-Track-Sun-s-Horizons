@@ -43,7 +43,9 @@ export const ADMIN_STEPS: OnboardingStep[] = [
     target: "nav-children",
     icon: "👧",
     title: "Enfants & Activités",
-    body: "Ajoutez et gérez les enfants, et retrouvez Danse, Multisport, Vélo et Baby Tennis dans Activités.",
+    // Deliberately no activity names: each school defines its own, so naming
+    // one school's activities here would be wrong for every other school.
+    body: "Ajoutez et gérez les enfants, et retrouvez les activités de l'école dans Activités.",
   },
   {
     target: "nav-monitors",
