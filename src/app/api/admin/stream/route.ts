@@ -2,6 +2,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { isSupabaseConfigured } from "@/lib/env";
 import { getServiceRoleClient } from "@/lib/supabase/service";
 import { subscribeToAdminUpdates, type AdminLiveEvent } from "@/server/demo/notifications-store";
+import { getActiveSchoolId } from "@/lib/schools/context";
 
 // Same SSE approach as /api/notifications/stream. In Supabase mode this
 // subscribes directly to Postgres changes on attendance and
@@ -26,6 +27,16 @@ export async function GET() {
     return new Response("Unauthorized", { status: 401 });
   }
 
+  // The subscription below runs on the service-role client, which bypasses
+  // RLS: without an explicit filter it receives every school's attendance and
+  // closure changes, and this route would push another school's activity ids
+  // — plus the timing of its activity — to an admin who has no access to it.
+  // Resolved server-side from the session, never from the request.
+  const schoolId = await getActiveSchoolId();
+  if (!schoolId) {
+    return new Response("Aucune école active", { status: 403 });
+  }
+
   const encoder = new TextEncoder();
   let cleanup: (() => void) | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
@@ -47,14 +58,28 @@ export async function GET() {
         // Unique per connection: two admin tabs must not share one
         // Realtime channel object on the cached shared client.
         .channel(`admin-live-attendance-and-closure-${crypto.randomUUID()}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, (payload) => {
+        // Same shape as the monitor stream's activity_id filter: Realtime
+        // applies it before anything reaches this process, so another
+        // school's rows are never received rather than received-then-dropped.
+        //
+        // A DELETE only carries the primary key under the default replica
+        // identity, so a filter on organization_id cannot match it and delete
+        // events do not arrive. That costs a live refresh when an attendance
+        // row is deleted (rare — it happens when a child is removed) and the
+        // next navigation shows the truth; leaking every school's changes to
+        // every admin to avoid it would not be a trade worth making.
+        .on("postgres_changes", { event: "*", schema: "public", table: "attendance", filter: `organization_id=eq.${schoolId}` }, (payload) => {
           const row = (payload.new ?? payload.old) as { activity_id: string };
           send({ activityId: row.activity_id });
         })
-        .on("postgres_changes", { event: "*", schema: "public", table: "activity_day_state" }, (payload) => {
-          const row = (payload.new ?? payload.old) as { activity_id: string };
-          send({ activityId: row.activity_id });
-        })
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "activity_day_state", filter: `organization_id=eq.${schoolId}` },
+          (payload) => {
+            const row = (payload.new ?? payload.old) as { activity_id: string };
+            send({ activityId: row.activity_id });
+          },
+        )
         .subscribe();
       cleanup = () => {
         supabase.removeChannel(channel);
