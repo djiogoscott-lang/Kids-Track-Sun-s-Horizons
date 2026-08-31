@@ -504,6 +504,12 @@ export interface RosterImportRow {
   activityName: string;
   garderie: string;
   notes: string;
+  /** Profile details real school lists carry. Optional so every existing
+   * caller and every simpler file keeps working unchanged. */
+  schoolClass?: string;
+  birthDate?: string; // ISO (YYYY-MM-DD)
+  phone?: string;
+  email?: string;
   /** Set by the admin in the preview UI to correct a row whose activityName
    * didn't match any known activity — an explicit activity id picked by
    * hand, never inferred. Takes priority over activityName when present. */
@@ -696,6 +702,10 @@ export async function commitRosterImport(rows: RosterImportRow[], weekStart: str
             activityId: o.activityId!,
             daycareAuto: o.daycareAuto ?? false,
             notes: o.notes ?? "",
+            schoolClass: o.row.schoolClass?.trim() ?? "",
+            birthDate: o.row.birthDate?.trim() || null,
+            phone: o.row.phone?.trim() ?? "",
+            email: o.row.email?.trim() ?? "",
           })),
         )
       : [];

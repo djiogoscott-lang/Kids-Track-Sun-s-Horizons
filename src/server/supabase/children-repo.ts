@@ -65,6 +65,12 @@ export interface NewSupabaseChildInput {
   daycareAuto: boolean;
   notes: string;
   isDemo?: boolean;
+  /** Profile details carried by real school lists. All optional: a child
+   * created by hand from the app only needs a name and an activity. */
+  schoolClass?: string;
+  birthDate?: string | null; // ISO (YYYY-MM-DD)
+  phone?: string;
+  email?: string;
 }
 
 export async function createChild(input: NewSupabaseChildInput): Promise<SupabaseChild> {
@@ -106,6 +112,10 @@ export async function bulkCreateChildren(inputs: NewSupabaseChildInput[]): Promi
         daycare_auto: input.daycareAuto,
         notes: input.notes,
         is_demo: input.isDemo ?? false,
+        school_class: input.schoolClass ?? "",
+        birth_date: input.birthDate ?? null,
+        phone: input.phone ?? "",
+        email: input.email ?? "",
       })),
     )
     .select("*");

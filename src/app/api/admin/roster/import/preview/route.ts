@@ -6,7 +6,7 @@ import { previewRosterImport, type RosterImportRow } from "@/features/presence/a
 import { ImportFileError, loadWorkbook } from "@/features/presence/application/excel-import";
 import {
   autoColumnMapping,
-  detectHeaders,
+  detectHeaderRow,
   isColumnMappingComplete,
   parseSheetRowsWithMapping,
   type ColumnMapping,
@@ -77,40 +77,69 @@ export async function POST(request: Request) {
     throw error;
   }
 
+  // Real workbooks ship with a pile of empty "Feuil5…Feuil16" tabs Excel
+  // leaves behind. Offering those as choices makes the secretary pick the
+  // right one out of thirteen, twelve of which hold nothing — so only sheets
+  // that actually contain rows are ever considered.
+  const populatedSheets = workbook.worksheets.filter((s) => s.actualRowCount > 0);
+  const candidateSheets = populatedSheets.length > 0 ? populatedSheets : workbook.worksheets;
+
   let selectedSheets: ExcelJS.Worksheet[];
   if (importAllSheets) {
-    selectedSheets = workbook.worksheets;
-  } else if (workbook.worksheets.length === 1) {
-    selectedSheets = workbook.worksheets;
+    selectedSheets = candidateSheets;
+  } else if (candidateSheets.length === 1) {
+    selectedSheets = candidateSheets;
   } else if (requestedSheetName) {
     const sheet = workbook.getWorksheet(requestedSheetName);
     if (!sheet) return NextResponse.json({ error: `Feuille "${requestedSheetName}" introuvable.` }, { status: 400 });
     selectedSheets = [sheet];
   } else {
-    return NextResponse.json({ multipleSheets: true, sheetNames: workbook.worksheets.map((s) => s.name) });
+    return NextResponse.json({ multipleSheets: true, sheetNames: candidateSheets.map((s) => s.name) });
   }
 
   const activities = await getActivitiesList();
   const activityNamesLower = new Map(activities.map((a) => [a.name.toLowerCase(), a.name]));
 
+  // An explicit target activity, chosen by the admin for the whole file.
+  // Resolved against THIS school's activities only, so an id from another
+  // school resolves to nothing rather than being trusted.
+  const targetActivityIdField = formData.get("targetActivityId");
+  const targetActivityId = typeof targetActivityIdField === "string" && targetActivityIdField ? targetActivityIdField : null;
+  const targetActivity = targetActivityId ? (activities.find((a) => a.id === targetActivityId) ?? null) : null;
+  if (targetActivityId && !targetActivity) {
+    return NextResponse.json({ error: "Activité cible introuvable dans cette école." }, { status: 400 });
+  }
+
   // Column mapping is resolved once, against the first sheet actually being
   // read — every selected sheet is expected to share the same header shape
   // (the common real-world case for a one-tab-per-activity workbook).
-  const representativeHeaders = detectHeaders(selectedSheets[0]);
+  const representativeHeaderRow = detectHeaderRow(selectedSheets[0]);
+  const representativeHeaders = representativeHeaderRow.headers;
   const effectiveMapping = columnMapping ?? autoColumnMapping(representativeHeaders);
-  // Activité is only optional when EVERY selected sheet's own name doubles
-  // as its activity — otherwise at least one row would have no way to
-  // resolve an activity at all, and the admin needs to see that.
+  // Activité is optional when the admin named a target activity for the file,
+  // or when EVERY selected sheet's own name doubles as its activity.
+  // Otherwise at least one row could not resolve an activity at all, and the
+  // admin needs to see that rather than have it guessed.
   const everySheetNameIsAnActivity = selectedSheets.every((s) => activityNamesLower.has(s.name.toLowerCase()));
-  if (!isColumnMappingComplete(representativeHeaders, effectiveMapping, everySheetNameIsAnActivity)) {
-    return NextResponse.json({ needsColumnMapping: true, headers: representativeHeaders, sheetName: selectedSheets[0].name });
+  const activityNameOptional = Boolean(targetActivity) || everySheetNameIsAnActivity;
+  if (!isColumnMappingComplete(representativeHeaders, effectiveMapping, activityNameOptional)) {
+    return NextResponse.json({
+      needsColumnMapping: true,
+      headers: representativeHeaders,
+      sheetName: selectedSheets[0].name,
+      headerRowNumber: representativeHeaderRow.rowNumber,
+    });
   }
 
   let rawRows;
   try {
     rawRows = selectedSheets.flatMap((sheet) => {
       const activityFallback = activityNamesLower.get(sheet.name.toLowerCase()) ?? null;
-      return parseSheetRowsWithMapping(sheet, effectiveMapping, activityFallback);
+      return parseSheetRowsWithMapping(sheet, effectiveMapping, {
+        targetActivityName: targetActivity?.name ?? null,
+        sheetActivityFallback: activityFallback,
+        headerRowNumber: sheet === selectedSheets[0] ? representativeHeaderRow.rowNumber : undefined,
+      });
     });
   } catch (error) {
     if (error instanceof ImportFileError) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -128,6 +157,10 @@ export async function POST(request: Request) {
       activityName: r.activityName,
       garderie: r.garderie,
       notes: r.notes,
+      schoolClass: r.schoolClass,
+      birthDate: r.birthDate,
+      phone: r.phone,
+      email: r.email,
       activityOverride: activityOverrides[rowKey(r.sheetName, r.row)],
     };
   });

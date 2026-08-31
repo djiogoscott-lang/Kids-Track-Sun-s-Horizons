@@ -14,6 +14,10 @@ const ROSTER_FIELD_LABELS: Record<RosterFieldKey, string> = {
   fullName: "Nom complet",
   activityName: "Activité",
   daycareAuto: "Garderie",
+  schoolClass: "Classe",
+  birthDate: "Date de naissance",
+  phone: "Téléphone",
+  email: "E-mail",
   notes: "Notes",
 };
 
@@ -125,6 +129,9 @@ export function RosterImportDialog({
   // .files from the ref on a later correction would silently lose the file.
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileChosen, setFileChosen] = useState(false);
+  /** Chosen once for the whole file. School lists ("Liste Prim CSPU") name
+   * their activity on the cover, not in a per-row column. */
+  const [targetActivityId, setTargetActivityId] = useState<string>("");
   const [importAllSheets, setImportAllSheets] = useState(false);
   const [selectedSheetName, setSelectedSheetName] = useState<string | undefined>(undefined);
   const [result, setResult] = useState<{ ok: boolean; message: string; byActivity?: Array<{ activityName: string; count: number }> } | null>(null);
@@ -143,6 +150,7 @@ export function RosterImportDialog({
     setResult(null);
     setSelectedFile(null);
     setFileChosen(false);
+    setTargetActivityId("");
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -178,6 +186,9 @@ export function RosterImportDialog({
       if (opts.columnMapping) formData.append("columnMapping", JSON.stringify(opts.columnMapping));
       if (opts.overrides) formData.append("activityOverrides", JSON.stringify(opts.overrides));
       if (opts.nameOverrides) formData.append("nameOverrides", JSON.stringify(opts.nameOverrides));
+      // Set when the file itself names no activity — a school list is handed
+      // over as "the CSPU maternelle list", not with an activity per row.
+      if (targetActivityId) formData.append("targetActivityId", targetActivityId);
 
       const res = await fetch("/api/admin/roster/import/preview", { method: "POST", body: formData });
       const json = (await res.json()) as (PreviewResponse | MultiSheetResponse | NeedsMappingResponse) & { error?: string };
@@ -346,6 +357,27 @@ export function RosterImportDialog({
                 aria-label="Choisir un fichier Excel"
                 onChange={(e) => setFileChosen(!!e.target.files?.[0])}
               />
+
+              <label className="block text-sm font-semibold">
+                Importer dans l&apos;activité
+                <select
+                  value={targetActivityId}
+                  onChange={(e) => setTargetActivityId(e.target.value)}
+                  className="mt-1.5 h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3.5 text-sm"
+                >
+                  <option value="">— Lire l&apos;activité dans le fichier —</option>
+                  {activities.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs font-normal text-[var(--muted)]">
+                  Choisissez l&apos;activité si le fichier est une liste d&apos;école (ex. « Liste Prim CSPU ») : tous les enfants du fichier y seront
+                  inscrits. Laissez sur « lire dans le fichier » si chaque ligne indique déjà son activité.
+                </span>
+              </label>
+
               {error ? <p role="alert" className="text-sm font-medium text-[var(--danger)]">{error}</p> : null}
               <div className="flex gap-2">
                 <button
