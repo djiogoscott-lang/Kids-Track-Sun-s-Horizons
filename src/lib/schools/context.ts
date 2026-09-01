@@ -71,10 +71,33 @@ export const getUserSchools = cache(async (): Promise<SchoolMembership[]> => {
     .is("revoked_at", null);
   if (error) throw error;
 
-  return (data ?? []).map((row) => {
+  const memberships: SchoolMembership[] = (data ?? []).map((row) => {
     const org = row.organizations as unknown as { id: string; name: string; active: boolean };
     return { schoolId: row.organization_id as string, name: org.name, active: org.active, role: row.role as UserRole };
   });
+
+  // A super admin can open any school, including one they just created and
+  // are not a member of — otherwise creating a school produces something
+  // nobody can enter. This is the explicit permission the flag grants, not a
+  // blanket bypass: everything else still goes through the normal
+  // school-scoped path once a school is open, and a non-super-admin gets
+  // exactly their memberships.
+  //
+  // Their own memberships stay FIRST so the implicit default (see
+  // getActiveSchoolId) remains their real school — being promoted must not
+  // silently move an admin into someone else's school on next sign-in.
+  const { data: profile, error: profileErr } = await supabase.from("profiles").select("is_super_admin").eq("id", user.id).maybeSingle();
+  if (profileErr) throw profileErr;
+  if (!(profile as { is_super_admin: boolean } | null)?.is_super_admin) return memberships;
+
+  const own = new Set(memberships.map((m) => m.schoolId));
+  const { data: allOrgs, error: orgErr } = await supabase.from("organizations").select("id, name, active").order("name");
+  if (orgErr) throw orgErr;
+  const others: SchoolMembership[] = (allOrgs ?? [])
+    .filter((org) => !own.has(org.id as string))
+    .map((org) => ({ schoolId: org.id as string, name: org.name as string, active: org.active as boolean, role: "ADMIN" as UserRole }));
+
+  return [...memberships, ...others];
 });
 
 /**

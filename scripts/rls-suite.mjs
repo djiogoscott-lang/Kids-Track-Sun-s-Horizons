@@ -449,12 +449,19 @@ async function main() {
     await client.query("begin");
     try {
       await client.query("update organization_memberships set revoked_at = now() where user_id = $1", [admin.user_id]);
+      // The platform-level super-admin flag is a SEPARATE grant from school
+      // membership: revoking someone from a school does not, and should not,
+      // strip their platform rights. This section is about a plain revoked
+      // admin, so the flag is cleared here to test that and nothing else —
+      // otherwise the assertion silently changes meaning the day the account
+      // running it gets promoted.
+      await client.query("update profiles set is_super_admin = false where id = $1", [admin.user_id]);
       await client.query("select set_config('role', 'authenticated', true)");
       await client.query("select set_config('request.jwt.claims', $1, true)", [claim(admin.user_id)]);
       const acts = await client.query("select id from activities");
-      check("revoked admin: loses global activity visibility", acts.rows.length === 0, `got ${acts.rows.length}`);
+      check("revoked plain admin: loses global activity visibility", acts.rows.length === 0, `got ${acts.rows.length}`);
       const orgs = await client.query("select id from organizations");
-      check("revoked admin: loses organization visibility", orgs.rows.length === 0, `got ${orgs.rows.length}`);
+      check("revoked plain admin: loses organization visibility", orgs.rows.length === 0, `got ${orgs.rows.length}`);
     } finally {
       await client.query("rollback");
     }
@@ -472,12 +479,17 @@ async function main() {
   //    a vacuous one when only one school exists.
   // -------------------------------------------------------------------
   {
+    const superAdminsBefore = (await client.query("select count(*)::int n from profiles where is_super_admin")).rows[0].n;
     await client.query("begin");
     try {
       const otherOrg = (await client.query("insert into organizations (name) values ('RLS_TX_ONLY_school') returning id")).rows[0];
       const ownOrgCount = (await client.query("select count(*)::int n from organizations")).rows[0].n;
 
-      // Baseline: a plain admin must NOT see the school they don't belong to.
+      // Baseline: a PLAIN admin must not see the school they don't belong to.
+      // The flag is cleared explicitly rather than assumed absent — this
+      // account may already hold it in a real deployment, and the whole
+      // section would then compare a super admin against a super admin.
+      await client.query("update profiles set is_super_admin = false where id = $1", [admin.user_id]);
       await client.query("select set_config('role', 'authenticated', true)");
       await client.query("select set_config('request.jwt.claims', $1, true)", [claim(admin.user_id)]);
       const asPlainAdmin = await client.query("select id from organizations");
@@ -512,9 +524,17 @@ async function main() {
       await client.query("rollback");
     }
     // Proof the rollback really happened — otherwise every assertion above
-    // would be worthless and a real profile would have been left flagged.
-    const stillNone = await client.query("select count(*)::int n from profiles where is_super_admin");
-    check("super admin: the in-transaction grant left no trace", stillNone.rows[0].n === 0, `got ${stillNone.rows[0].n}`);
+    // would be worthless, and the transaction both granted and revoked the
+    // flag, so a failed rollback could leave a real account either wrongly
+    // promoted or wrongly demoted. Compared against the count taken before
+    // the transaction rather than against zero, since a real deployment
+    // legitimately has a super admin.
+    const after = await client.query("select count(*)::int n from profiles where is_super_admin");
+    check(
+      "super admin: the in-transaction grant and revoke left no trace",
+      after.rows[0].n === superAdminsBefore,
+      `got ${after.rows[0].n}, expected ${superAdminsBefore}`,
+    );
     const noTestOrg = await client.query("select count(*)::int n from organizations where name = 'RLS_TX_ONLY_school'");
     check("super admin: the in-transaction school left no trace", noTestOrg.rows[0].n === 0, `got ${noTestOrg.rows[0].n}`);
   }
