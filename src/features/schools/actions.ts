@@ -5,20 +5,21 @@ import { cookies } from "next/headers";
 import { requireUser } from "@/lib/auth/require-user";
 import { ACTIVE_SCHOOL_COOKIE, getUserSchools } from "@/lib/schools/context";
 import { createSchool, isSuperAdmin, updateSchool, type SchoolInput } from "@/server/supabase/schools-repo";
-import { isSupabaseAuthEnabled } from "@/lib/env";
 
 export type SchoolActionResult = { ok: true } | { ok: false; message: string };
 
 const NAME_MAX = 160;
 
 /**
- * Demo mode has no real profiles rows to carry the flag, so it grants
- * super-admin to the demo admin — it is a local testing bridge, never
- * enabled in production (Vercel runs with real auth).
+ * One rule, everywhere. There used to be a local bypass here granting
+ * super-admin whenever real auth was off, because a local session had no real
+ * profile row to read the flag from. Local sign-in now adopts a real account,
+ * so the bypass would simply hand school creation to any admin who happens to
+ * be running locally — and would hide, rather than surface, the fact that
+ * nobody actually holds the flag yet.
  */
 async function requireSuperAdmin(): Promise<{ ok: true; userId: string } | { ok: false; message: string }> {
   const user = await requireUser("ADMIN");
-  if (!isSupabaseAuthEnabled) return { ok: true, userId: user.id };
   if (!(await isSuperAdmin(user.id))) {
     return { ok: false, message: "Seul un super-administrateur peut gérer les écoles." };
   }

@@ -45,21 +45,36 @@ export async function encodeDemoSession(payload: DemoSessionPayload): Promise<st
   return `${payloadPart}.${bytesToBase64Url(new Uint8Array(signature))}`;
 }
 
+/**
+ * Fails closed on anything it does not recognise, and never throws.
+ *
+ * The whole body is guarded, not just the JSON parse: base64UrlToBytes calls
+ * atob, which throws on a value that is not valid base64. A cookie of
+ * "a.b.c" — a stale cookie from another app on localhost is enough — used to
+ * raise InvalidCharacterError out of getCurrentUser(), and since that runs
+ * inside every server component the visitor got a 500 page they could not
+ * escape: the error fired before any redirect to /login could happen, and
+ * the offending cookie was still there on reload. An unreadable session is
+ * simply no session.
+ */
 export async function decodeDemoSession(cookieValue: string | undefined): Promise<DemoSessionPayload | null> {
   if (!cookieValue) return null;
-  const [payloadPart, signaturePart] = cookieValue.split(".");
-  if (!payloadPart || !signaturePart) return null;
-
-  const valid = await crypto.subtle.verify(
-    "HMAC",
-    await hmacKey(),
-    base64UrlToBytes(signaturePart),
-    new TextEncoder().encode(payloadPart),
-  );
-  if (!valid) return null;
 
   try {
-    return JSON.parse(new TextDecoder().decode(base64UrlToBytes(payloadPart))) as DemoSessionPayload;
+    const [payloadPart, signaturePart] = cookieValue.split(".");
+    if (!payloadPart || !signaturePart) return null;
+
+    const valid = await crypto.subtle.verify("HMAC", await hmacKey(), base64UrlToBytes(signaturePart), new TextEncoder().encode(payloadPart));
+    if (!valid) return null;
+
+    const decoded = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payloadPart))) as DemoSessionPayload;
+    // A correctly signed cookie can still carry a shape this app never wrote
+    // (an older format, a hand-crafted payload signed with a leaked secret).
+    // Anything without the three fields is not a session.
+    if (typeof decoded?.userId !== "string" || typeof decoded?.name !== "string" || (decoded?.role !== "ADMIN" && decoded?.role !== "MONITOR")) {
+      return null;
+    }
+    return decoded;
   } catch {
     return null;
   }

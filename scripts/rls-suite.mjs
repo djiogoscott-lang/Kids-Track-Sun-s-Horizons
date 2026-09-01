@@ -460,6 +460,65 @@ async function main() {
     }
   }
 
+  // -------------------------------------------------------------------
+  // 8. SUPER_ADMIN
+  //
+  //    Nobody currently holds the flag in this database, so the behaviour is
+  //    exercised by granting it IN-TRANSACTION and rolling back — the same
+  //    discipline as the revoked-user tests above. That keeps the suite
+  //    meaningful before anyone is promoted, and keeps proving the rule
+  //    afterwards. A test school is created in the same transaction so
+  //    "sees a school they are not a member of" is a real claim rather than
+  //    a vacuous one when only one school exists.
+  // -------------------------------------------------------------------
+  {
+    await client.query("begin");
+    try {
+      const otherOrg = (await client.query("insert into organizations (name) values ('RLS_TX_ONLY_school') returning id")).rows[0];
+      const ownOrgCount = (await client.query("select count(*)::int n from organizations")).rows[0].n;
+
+      // Baseline: a plain admin must NOT see the school they don't belong to.
+      await client.query("select set_config('role', 'authenticated', true)");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [claim(admin.user_id)]);
+      const asPlainAdmin = await client.query("select id from organizations");
+      check(
+        "plain admin: does not see a school they are not a member of",
+        asPlainAdmin.rows.length === ownOrgCount - 1,
+        `got ${asPlainAdmin.rows.length}, expected ${ownOrgCount - 1}`,
+      );
+      check(
+        "plain admin: the foreign school is invisible by UUID",
+        (await client.query("select id from organizations where id = $1", [otherOrg.id])).rows.length === 0,
+      );
+
+      // Same user, now flagged super admin.
+      await client.query("select set_config('role', 'postgres', true)");
+      await client.query("update profiles set is_super_admin = true where id = $1", [admin.user_id]);
+      await client.query("select set_config('role', 'authenticated', true)");
+      const asSuper = await client.query("select id from organizations");
+      check("super admin: sees every school", asSuper.rows.length === ownOrgCount, `got ${asSuper.rows.length}, expected ${ownOrgCount}`);
+      check(
+        "super admin: sees the school they are not a member of",
+        (await client.query("select id from organizations where id = $1", [otherOrg.id])).rows.length === 1,
+      );
+      check("super admin: is_super_admin() reports true", (await client.query("select public.is_super_admin() as v")).rows[0].v === true);
+
+      // The flag widens school VISIBILITY only. It must not hand over the
+      // contents of a school the user has no membership in — those stay
+      // governed by the per-table policies.
+      const foreignChildren = await client.query("select id from children where organization_id = $1", [otherOrg.id]);
+      check("super admin: does not gain another school's children through the flag", foreignChildren.rows.length === 0);
+    } finally {
+      await client.query("rollback");
+    }
+    // Proof the rollback really happened — otherwise every assertion above
+    // would be worthless and a real profile would have been left flagged.
+    const stillNone = await client.query("select count(*)::int n from profiles where is_super_admin");
+    check("super admin: the in-transaction grant left no trace", stillNone.rows[0].n === 0, `got ${stillNone.rows[0].n}`);
+    const noTestOrg = await client.query("select count(*)::int n from organizations where name = 'RLS_TX_ONLY_school'");
+    check("super admin: the in-transaction school left no trace", noTestOrg.rows[0].n === 0, `got ${noTestOrg.rows[0].n}`);
+  }
+
   await client.end();
 
   // --- Report ---

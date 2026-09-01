@@ -3,7 +3,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SchoolFormDialog } from "@/features/schools/school-form-dialog";
 import { SchoolOpenButton } from "@/features/schools/school-open-button";
 import { requireUser } from "@/lib/auth/require-user";
-import { isSupabaseAuthEnabled } from "@/lib/env";
 import { getActiveSchoolId, getUserSchools } from "@/lib/schools/context";
 import { getSchools, getSchoolStats, isSuperAdmin } from "@/server/supabase/schools-repo";
 import { formatDateLong } from "@/lib/format";
@@ -15,7 +14,13 @@ export default async function AdminSchoolsPage() {
   // are a member of. The list of ids comes from the server-side membership
   // read, never from the request.
   const [memberships, activeSchoolId] = await Promise.all([getUserSchools(), getActiveSchoolId()]);
-  const superAdmin = !isSupabaseAuthEnabled || (await isSuperAdmin(user.id));
+  // Read from the profile, always. This used to short-circuit to `true`
+  // whenever real auth was off, back when a local session had no real user id
+  // to look up. Local sign-in now adopts a real account, so the shortcut had
+  // stopped being a stand-in and become a lie: a plain admin was shown every
+  // school in the database plus "Ajouter une école", which is precisely the
+  // privilege this screen exists to gate.
+  const superAdmin = await isSuperAdmin(user.id);
   const schools = await getSchools(superAdmin ? undefined : memberships.map((m) => m.schoolId));
 
   const stats = await Promise.all(schools.map((s) => getSchoolStats(s.id)));
