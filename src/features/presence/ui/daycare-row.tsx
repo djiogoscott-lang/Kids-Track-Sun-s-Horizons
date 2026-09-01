@@ -7,7 +7,7 @@ import { formatTime } from "@/lib/format";
 
 const REASON_LABEL: Record<DaycareRow["reason"], string> = {
   PLANNED: "Garderie prévue",
-  AFTER_SESSION: "Garderie après séance",
+  AFTER_SESSION: "Resté après la séance",
   MANUAL: "Ajout manuel",
 };
 

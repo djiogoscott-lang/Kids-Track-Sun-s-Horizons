@@ -2,7 +2,6 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { BOOTSTRAP_ORGANIZATION_ID, getServiceRoleClient } from "@/lib/supabase/service";
 import { getCurrentUser } from "@/lib/auth/session";
-import { isSupabaseAuthEnabled } from "@/lib/env";
 import type { UserRole } from "@/lib/constants/roles";
 
 /**
@@ -31,6 +30,8 @@ export interface SchoolMembership {
   role: UserRole;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class NoSchoolAccessError extends Error {
   constructor(message = "Aucune école ne vous est attribuée.") {
     super(message);
@@ -50,31 +51,17 @@ export const getUserSchools = cache(async (): Promise<SchoolMembership[]> => {
 
   const supabase = getServiceRoleClient();
 
-  // Demo sessions carry ids like "user-admin", which are not UUIDs and have
-  // no membership rows — querying organization_memberships with one is a
-  // hard 22P02 error, not an empty result. Demo mode is a local testing
-  // bridge with no real accounts, so membership has to be simulated.
-  //
-  // Only the demo ADMIN gets every school (they stand in for the super admin
-  // locally, and the schools screen has to be exercisable). A demo MONITOR
-  // gets the bootstrap school only: granting them every school made the
-  // school switcher offer schools they have no business seeing, which both
-  // misrepresents production — where real memberships decide — and makes
-  // demo mode useless for testing isolation, since every user would pass.
-  if (!isSupabaseAuthEnabled) {
-    if (user.role !== "ADMIN") {
-      const { data, error } = await supabase
-        .from("organizations")
-        .select("id, name, active")
-        .eq("id", BOOTSTRAP_ORGANIZATION_ID)
-        .maybeSingle();
-      if (error) throw error;
-      const org = data as { id: string; name: string; active: boolean } | null;
-      return org ? [{ schoolId: org.id, name: org.name, active: org.active, role: user.role }] : [];
-    }
-    const { data, error } = await supabase.from("organizations").select("id, name, active").order("name");
+  // Passwordless local sign-in adopts a REAL user id whenever Supabase holds
+  // the data (see lib/auth/sign-in-accounts.ts), so the membership read below
+  // applies to it unchanged — same rows, same roles, same isolation as
+  // production. The fallback here is only for a seed id like "user-admin",
+  // which has no membership row at all and would make the query fail with
+  // 22P02 rather than return nothing.
+  if (!UUID_RE.test(user.id)) {
+    const { data, error } = await supabase.from("organizations").select("id, name, active").eq("id", BOOTSTRAP_ORGANIZATION_ID).maybeSingle();
     if (error) throw error;
-    return (data ?? []).map((org) => ({ schoolId: org.id, name: org.name, active: org.active, role: user.role }));
+    const org = data as { id: string; name: string; active: boolean } | null;
+    return org ? [{ schoolId: org.id, name: org.name, active: org.active, role: user.role }] : [];
   }
 
   const { data, error } = await supabase

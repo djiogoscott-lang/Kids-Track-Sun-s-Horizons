@@ -1,27 +1,35 @@
 import { ArrowRight } from "lucide-react";
-import { activityStyle } from "@/features/presence/ui/activity-icons";
 import { signInDemoAction } from "@/lib/auth/actions";
-import { ACTIVITIES, DEMO_USERS, INITIAL_ACTIVITY_MONITORS } from "@/server/demo/data";
+import { listSignInAccounts } from "@/lib/auth/sign-in-accounts";
 
-// Deliberately the pure demo mapping, never the indirected data source: these
-// are the fixed demo user ids (monitor-1..4), which only ever mean anything
-// against the demo assignment table — they don't correspond to any real
-// Supabase user, so this must keep working exactly the same regardless of
-// whether Supabase is configured for real data.
-function activityFor(userId: string) {
-  const activityId = Object.entries(INITIAL_ACTIVITY_MONITORS).find(([, monitorId]) => monitorId === userId)?.[0];
-  return ACTIVITIES.find((a) => a.id === activityId);
-}
+/**
+ * Passwordless sign-in, local only (see sign-in-accounts.ts and
+ * signInDemoAction, which refuses outright once real auth is on).
+ *
+ * The cards are built from whatever accounts actually exist — real ones when
+ * Supabase holds the data — instead of a fixed demo cast whose activity names
+ * stopped matching reality the moment the school renamed its activities.
+ */
+export async function DemoLoginOptions() {
+  const accounts = await listSignInAccounts();
 
-export function DemoLoginOptions() {
   return (
     <div className="space-y-2.5">
-      <p className="text-center text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-        Démonstration — sans configuration
-      </p>
-      {DEMO_USERS.map((user) => {
-        const activity = user.role === "MONITOR" ? activityFor(user.id) : null;
-        const style = activity ? activityStyle(activity.id) : { color: "var(--primary)", bg: "var(--tint-blue-bg)" };
+      <p className="text-center text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">Connexion locale — sans mot de passe</p>
+      {accounts.length === 0 ? (
+        <p className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3.5 text-sm text-[var(--muted)]">
+          Aucun compte n&apos;est rattaché à une école. Ajoutez un membre pour pouvoir vous connecter.
+        </p>
+      ) : null}
+      {accounts.map((user) => {
+        const scope =
+          user.role === "ADMIN"
+            ? user.schoolNames.length > 0
+              ? `Administration — ${user.schoolNames.join(", ")}`
+              : "Administration"
+            : user.activityName
+              ? `Appel et départ — ${user.activityName}`
+              : "Aucune activité attribuée";
 
         return (
           <form key={user.id} action={signInDemoAction.bind(null, user.id)}>
@@ -31,15 +39,16 @@ export function DemoLoginOptions() {
             >
               <span
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold"
-                style={{ backgroundColor: style.bg, color: style.color }}
+                style={{
+                  backgroundColor: user.role === "ADMIN" ? "var(--tint-blue-bg)" : "var(--background)",
+                  color: user.role === "ADMIN" ? "var(--primary)" : "var(--foreground)",
+                }}
               >
-                {user.role === "ADMIN" ? "A" : user.name.replace("Moniteur ", "")}
+                {user.role === "ADMIN" ? "A" : (user.name.match(/\d+/)?.[0] ?? user.name.slice(0, 1).toUpperCase())}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-[var(--foreground)]">{user.name}</span>
-                <span className="block truncate text-xs text-[var(--muted)]">
-                  {user.role === "ADMIN" ? "Vue d'ensemble des 4 activités" : `Appel et départ — ${activity?.name ?? ""}`}
-                </span>
+                <span className="block truncate text-xs text-[var(--muted)]">{scope}</span>
               </span>
               <ArrowRight size={16} className="shrink-0 text-[var(--muted)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--primary)]" />
             </button>

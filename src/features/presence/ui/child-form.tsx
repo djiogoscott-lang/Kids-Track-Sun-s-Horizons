@@ -12,6 +12,13 @@ interface ChildFormValues {
   activityId: string;
   daycareAuto: boolean;
   notes: string;
+  /** Profile details carried by the school lists. Always sent, so the values
+   * shown are exactly the values saved — the form is the whole truth for
+   * these fields rather than patching a subset. */
+  schoolClass: string;
+  birthDate: string; // ISO (YYYY-MM-DD), "" when unknown
+  phone: string;
+  email: string;
 }
 
 export function ChildForm({
@@ -25,7 +32,17 @@ export function ChildForm({
 }) {
   const router = useRouter();
   const [values, setValues] = useState<ChildFormValues>(
-    initial ?? { firstName: "", lastName: "", activityId: activities[0]?.id ?? "", daycareAuto: false, notes: "" },
+    initial ?? {
+      firstName: "",
+      lastName: "",
+      activityId: activities[0]?.id ?? "",
+      daycareAuto: false,
+      notes: "",
+      schoolClass: "",
+      birthDate: "",
+      phone: "",
+      email: "",
+    },
   );
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +80,52 @@ export function ChildForm({
             required
             value={values.lastName}
             onChange={(e) => setValues((v) => ({ ...v, lastName: e.target.value }))}
+            className="mt-2 h-12 w-full rounded-xl border border-[var(--border)] bg-white px-4 outline-none focus:border-[var(--primary)]"
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block text-sm font-semibold">
+          Classe
+          <input
+            value={values.schoolClass}
+            onChange={(e) => setValues((v) => ({ ...v, schoolClass: e.target.value }))}
+            placeholder="1D, 2M6, Accueil…"
+            maxLength={40}
+            className="mt-2 h-12 w-full rounded-xl border border-[var(--border)] bg-white px-4 outline-none focus:border-[var(--primary)]"
+          />
+        </label>
+        <label className="block text-sm font-semibold">
+          Date de naissance
+          <input
+            type="date"
+            value={values.birthDate}
+            onChange={(e) => setValues((v) => ({ ...v, birthDate: e.target.value }))}
+            className="mt-2 h-12 w-full rounded-xl border border-[var(--border)] bg-white px-4 outline-none focus:border-[var(--primary)]"
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block text-sm font-semibold">
+          Téléphone
+          <input
+            value={values.phone}
+            onChange={(e) => setValues((v) => ({ ...v, phone: e.target.value }))}
+            placeholder="0470/ 12 34 56"
+            maxLength={200}
+            className="mt-2 h-12 w-full rounded-xl border border-[var(--border)] bg-white px-4 outline-none focus:border-[var(--primary)]"
+          />
+        </label>
+        <label className="block text-sm font-semibold">
+          E-mail
+          <input
+            type="email"
+            value={values.email}
+            onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))}
+            placeholder="parent@exemple.be"
+            maxLength={300}
             className="mt-2 h-12 w-full rounded-xl border border-[var(--border)] bg-white px-4 outline-none focus:border-[var(--primary)]"
           />
         </label>

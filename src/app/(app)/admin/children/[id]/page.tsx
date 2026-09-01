@@ -49,6 +49,10 @@ export default async function EditChildPage({ params }: { params: Promise<{ id: 
           activityId: child.activityId,
           daycareAuto: child.daycareAuto,
           notes: child.notes,
+          schoolClass: child.schoolClass,
+          birthDate: child.birthDate,
+          phone: child.phone,
+          email: child.email,
         }}
       />
 

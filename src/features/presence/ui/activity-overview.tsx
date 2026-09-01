@@ -79,8 +79,14 @@ export async function ActivityOverview({ activityId, activity, now }: { activity
         headline={`${daycare.length} enfant${daycare.length > 1 ? "s" : ""}`}
         stats={
           <>
-            <span style={{ color: "var(--brand-gold)" }}>🟠 {daycarePlanned} arrivés automatiquement</span> ·{" "}
-            <span style={{ color: "#8a6d12" }}>🟡 {daycareAfterSession} issus des départs</span>
+            {/* Wording matches DaycareReason exactly (see domain/daycare.ts):
+                PLANNED = registered for daycare in advance, AFTER_SESSION =
+                still on site once the session ended. "issus des départs" read
+                as "children who departed", which is the opposite — those
+                children have precisely NOT left, and the card above shows
+                "0 partis" right next to it. */}
+            <span style={{ color: "var(--brand-gold)" }}>🟠 {daycarePlanned} garderie prévue</span> ·{" "}
+            <span style={{ color: "#8a6d12" }}>🟡 {daycareAfterSession} restés après la séance</span>
           </>
         }
         cta="Voir la garderie"

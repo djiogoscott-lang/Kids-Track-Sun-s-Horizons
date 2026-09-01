@@ -1,26 +1,17 @@
 /**
  * Single switch point between the in-memory demo store and Supabase.
  *
- * Two independent flags, two independent dimensions:
- *  - isSupabaseConfigured: where the activity/children ROSTER lives.
- *  - isSupabaseAuthEnabled: whether the CURRENT SESSION is a real Supabase
- *    Auth user or a demo cookie.
- *
- * The monitor/assignment dimension (who is logged in, which activity are
- * they assigned to) cannot migrate ahead of real auth: a demo session's id
- * ("monitor-1") will never match a real Supabase UUID. So monitor identity
- * and activity<->monitor assignment stay on the demo map until
- * isSupabaseAuthEnabled is true, regardless of where the roster itself
- * lives — while data is in Supabase but auth is still demo, each Supabase
- * activity's monitorId is bridged back to its demo counterpart by name
- * (the one thing stable across both representations), so the rest of the
- * app can keep treating activity.monitorId as "whoever can actually act as
- * this activity's monitor right now" without knowing about any of this.
+ * isSupabaseConfigured decides where everything lives. There is no longer a
+ * second axis translating demo identities onto real rows: passwordless local
+ * sign-in adopts a real user id (see lib/auth/sign-in-accounts.ts), so
+ * monitor identity, activity assignment and school membership all take the
+ * same path as production. The name-based bridges this file used to carry
+ * silently misreported reality once activities were renamed, and are gone.
  */
 import { cache } from "react";
-import { isSupabaseAuthEnabled, isSupabaseConfigured } from "@/lib/env";
+import { isSupabaseConfigured } from "@/lib/env";
 import type { PresenceRecord } from "@/features/presence/domain/types";
-import { ACTIVITIES, INITIAL_ACTIVITY_MONITORS, MONITORS } from "@/server/demo/data";
+import { ACTIVITIES, MONITORS } from "@/server/demo/data";
 import * as demoChildren from "@/server/demo/children-store";
 import {
   getActivityAssignments,
@@ -67,6 +58,12 @@ export interface ChildRecord {
    * registered as "FAUVEL Clara" (born 2020 and 2022) are two children, and
    * matching on name alone silently merged them into one. */
   birthDate: string;
+  /** The school's own class label, kept verbatim ("1D", "2M6", "Accueil"). */
+  schoolClass: string;
+  /** Free text: real lists put several numbers and parent annotations in one
+   * cell, and splitting them would lose information. */
+  phone: string;
+  email: string;
 }
 
 /**
@@ -83,22 +80,14 @@ export const getActivitiesList = cache(async (): Promise<ActivityRecord[]> => {
     return ACTIVITIES.map((a) => ({ id: a.id, name: a.name, description: "", monitorId: assignments.get(a.id) ?? null, active: true }));
   }
 
-  const activities = await supaActivities.getActivities();
-  if (isSupabaseAuthEnabled) return activities;
-
-  const demoAssignments = getActivityAssignments();
-  return activities.map((a) => {
-    const demoActivityId = ACTIVITIES.find((d) => d.name === a.name)?.id;
-    // No demo counterpart (every real activity once the school renamed them:
-    // "Mat 1 NDC" matches none of the demo seed's Danse/Vélo/…): fall back to
-    // the REAL assignment rather than reporting null. Reporting null here is
-    // not a harmless display quirk — the admin screen renders that as "Aucun
-    // moniteur" and offers to save it back, and unassigning writes to the
-    // real database even in demo-auth mode. That is how Mat 1 NDC silently
-    // lost its monitor.
-    if (!demoActivityId) return a;
-    return { ...a, monitorId: demoAssignments.get(demoActivityId) ?? null };
-  });
+  // No demo translation left: passwordless sign-in now adopts a real user id
+  // (see lib/auth/sign-in-accounts.ts), so activity.monitorId is already
+  // meaningful for whoever is signed in. The previous bridge matched demo
+  // activities to real ones BY NAME, which stopped matching anything once the
+  // school renamed its activities — and then reported every real assignment
+  // as "Aucun moniteur", which the admin screen offered to save back over the
+  // truth.
+  return supaActivities.getActivities();
 });
 
 export interface NewActivityInput {
@@ -145,48 +134,38 @@ export async function deleteActivityRecord(activityId: string): Promise<void> {
 }
 
 export const getMonitorsList = cache(async (): Promise<MonitorRecord[]> => {
-  if (isSupabaseAuthEnabled) return supaActivities.getMonitors();
+  if (isSupabaseConfigured) return supaActivities.getMonitors();
   return MONITORS.map((m) => ({ id: m.id, name: m.name }));
 });
 
 export async function setMonitorForActivity(activityId: string, monitorId: string): Promise<void> {
-  if (isSupabaseAuthEnabled) return supaActivities.setActivityMonitor(activityId, monitorId);
-  // Demo session assigning a demo monitor id: resolve to the matching demo
-  // activity by name (activityId here may be a real Supabase UUID) and
-  // update the demo map — never write a demo id into Supabase's UUID column.
-  if (isSupabaseConfigured) {
-    const activities = await supaActivities.getActivities();
-    const name = activities.find((a) => a.id === activityId)?.name;
-    const demoActivityId = name ? ACTIVITIES.find((a) => a.name === name)?.id : undefined;
-    if (demoActivityId) setDemoActivityMonitor(demoActivityId, monitorId);
-    return;
-  }
+  // Both ids are real whenever Supabase holds the data, so the assignment is
+  // written where it is read from. Routing this through the demo map while
+  // the screen displayed real rows is what let an assignment be silently
+  // dropped.
+  if (isSupabaseConfigured) return supaActivities.setActivityMonitor(activityId, monitorId);
   setDemoActivityMonitor(activityId, monitorId);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * Same transitional bridge as getActivitiesList()/setMonitorForActivity():
- * a demo session's user id ("monitor-4") is not a valid UUID, so writing it
- * straight into a Postgres FK column (attendance.recorded_by,
- * activity_day_state.closed_by) fails outright. Once real auth is on, the id
- * is already a real UUID and passes through unchanged. Until then, resolve
- * the demo user to whichever activity they're mapped to, then to that same
- * activity's real Supabase monitor — or null (a legal, honest "unknown") if
- * there isn't one, e.g. the demo admin has no single activity to bridge via.
+ * attendance.recorded_by and activity_day_state.closed_by are UUID FKs, so a
+ * seed id like "monitor-4" cannot be written there. Passwordless sign-in now
+ * adopts a real user id whenever Supabase holds the data, so the id passes
+ * straight through; the shape is still checked rather than assumed, and an id
+ * that is not a UUID becomes null — a legal, honest "unknown" — instead of
+ * failing the whole write.
  */
 async function resolveRealUserId(userId: string): Promise<string | null> {
-  if (!isSupabaseConfigured || isSupabaseAuthEnabled) return isSupabaseAuthEnabled ? userId : null;
-  const demoActivityId = Object.entries(INITIAL_ACTIVITY_MONITORS).find(([, m]) => m === userId)?.[0];
-  const demoActivityName = demoActivityId ? ACTIVITIES.find((a) => a.id === demoActivityId)?.name : undefined;
-  if (!demoActivityName) return null;
-  const realActivities = await supaActivities.getActivities();
-  return realActivities.find((a) => a.name === demoActivityName)?.monitorId ?? null;
+  if (!isSupabaseConfigured) return null;
+  return UUID_RE.test(userId) ? userId : null;
 }
 
 // Demo mode has no created_at/is_demo concept — synthesized here so the rest
 // of the app can treat ChildRecord uniformly regardless of backend.
 function demoChildToRecord(child: { id: string; firstName: string; lastName: string; activityId: string; daycareAuto: boolean; active: boolean; notes: string }): ChildRecord {
-  return { ...child, isDemo: false, createdAt: new Date(0), birthDate: "" };
+  return { ...child, isDemo: false, createdAt: new Date(0), birthDate: "", schoolClass: "", phone: "", email: "" };
 }
 
 export const getChildrenList = cache(async (): Promise<ChildRecord[]> => {
@@ -207,6 +186,12 @@ export interface NewChildRecordInput {
   daycareAuto: boolean;
   notes: string;
   isDemo?: boolean;
+  /** Optional profile details. A child added by hand needs only a name and an
+   * activity; a school list carries all four. */
+  schoolClass?: string;
+  birthDate?: string | null; // ISO (YYYY-MM-DD)
+  phone?: string;
+  email?: string;
 }
 
 export async function createChildRecord(input: NewChildRecordInput): Promise<ChildRecord> {
@@ -223,7 +208,9 @@ export async function bulkCreateChildRecords(inputs: NewChildRecordInput[]): Pro
   return supaChildren.bulkCreateChildren(inputs);
 }
 
-export type ChildRecordUpdate = Partial<Pick<ChildRecord, "firstName" | "lastName" | "activityId" | "daycareAuto" | "notes" | "active">>;
+export type ChildRecordUpdate = Partial<
+  Pick<ChildRecord, "firstName" | "lastName" | "activityId" | "daycareAuto" | "notes" | "active" | "schoolClass" | "birthDate" | "phone" | "email">
+>;
 
 export async function updateChildRecord(childId: string, update: ChildRecordUpdate): Promise<ChildRecord | null> {
   if (isSupabaseConfigured) return supaChildren.updateChild(childId, update);

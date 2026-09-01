@@ -6,12 +6,15 @@ import { DEMO_SESSION_COOKIE, encodeDemoSession } from "@/lib/auth/demo-session"
 import { resolveHomePath } from "@/lib/auth/session";
 import { isSupabaseAuthEnabled } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
-import { DEMO_USERS } from "@/server/demo/data";
+import { listSignInAccounts } from "@/lib/auth/sign-in-accounts";
 
 export async function signInDemoAction(userId: string) {
   if (isSupabaseAuthEnabled) return;
 
-  const user = DEMO_USERS.find((u) => u.id === userId);
+  // The id is still validated against the server-built list rather than
+  // trusted: passwordless sign-in must not let an arbitrary id (say, a
+  // revoked member's) into a session cookie just because it was posted.
+  const user = (await listSignInAccounts()).find((u) => u.id === userId);
   if (!user) return;
 
   const cookieStore = await cookies();

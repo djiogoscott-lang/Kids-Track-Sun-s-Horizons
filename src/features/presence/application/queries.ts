@@ -405,6 +405,12 @@ export interface ChildAdminRow {
   notes: string;
   isDemo: boolean;
   createdAt: Date;
+  /** Profile details — admin-only, like every other field on this row. This
+   * shape is never handed to a monitor screen. */
+  schoolClass: string;
+  birthDate: string;
+  phone: string;
+  email: string;
 }
 
 export async function listChildrenForAdmin(): Promise<ChildAdminRow[]> {

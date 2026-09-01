@@ -13,6 +13,9 @@ export interface SupabaseChild {
   createdAt: Date;
   /** ISO date or "" — see ChildRecord.birthDate. */
   birthDate: string;
+  schoolClass: string;
+  phone: string;
+  email: string;
 }
 
 interface ChildRow {
@@ -26,6 +29,9 @@ interface ChildRow {
   is_demo: boolean;
   created_at: string;
   birth_date: string | null;
+  school_class: string;
+  phone: string;
+  email: string;
 }
 
 function mapRow(row: ChildRow): SupabaseChild {
@@ -42,6 +48,9 @@ function mapRow(row: ChildRow): SupabaseChild {
     // A `date` column comes back as "YYYY-MM-DD"; sliced rather than parsed
     // through Date so a birth date can never shift a day across a timezone.
     birthDate: row.birth_date ? String(row.birth_date).slice(0, 10) : "",
+    schoolClass: row.school_class ?? "",
+    phone: row.phone ?? "",
+    email: row.email ?? "",
   };
 }
 
@@ -91,6 +100,13 @@ export async function createChild(input: NewSupabaseChildInput): Promise<Supabas
       daycare_auto: input.daycareAuto,
       notes: input.notes,
       is_demo: input.isDemo ?? false,
+      // Written here too, not only in bulkCreateChildren: NewSupabaseChildInput
+      // has always declared these, but the single insert dropped them, so a
+      // child added by hand lost their class and birth date silently.
+      school_class: input.schoolClass ?? "",
+      birth_date: input.birthDate ?? null,
+      phone: input.phone ?? "",
+      email: input.email ?? "",
     })
     .select("*")
     .single();
@@ -129,7 +145,12 @@ export async function bulkCreateChildren(inputs: NewSupabaseChildInput[]): Promi
   return data.map(mapRow);
 }
 
-export type SupabaseChildUpdate = Partial<Pick<SupabaseChild, "firstName" | "lastName" | "activityId" | "daycareAuto" | "notes" | "active">>;
+export type SupabaseChildUpdate = Partial<
+  Pick<SupabaseChild, "firstName" | "lastName" | "activityId" | "daycareAuto" | "notes" | "active" | "schoolClass" | "phone" | "email"> & {
+    /** "" clears the date; undefined leaves it untouched. */
+    birthDate: string;
+  }
+>;
 
 export async function updateChild(childId: string, update: SupabaseChildUpdate): Promise<SupabaseChild | null> {
   const supabase = getServiceRoleClient();
@@ -140,6 +161,12 @@ export async function updateChild(childId: string, update: SupabaseChildUpdate):
   if (update.daycareAuto !== undefined) patch.daycare_auto = update.daycareAuto;
   if (update.notes !== undefined) patch.notes = update.notes;
   if (update.active !== undefined) patch.active = update.active;
+  if (update.schoolClass !== undefined) patch.school_class = update.schoolClass;
+  if (update.phone !== undefined) patch.phone = update.phone;
+  if (update.email !== undefined) patch.email = update.email;
+  // Only touched when the caller says so, and an empty string means "no date"
+  // rather than the literal "" Postgres would reject for a date column.
+  if (update.birthDate !== undefined) patch.birth_date = update.birthDate === "" ? null : update.birthDate;
 
   const { data, error } = await supabase
     .from("children")

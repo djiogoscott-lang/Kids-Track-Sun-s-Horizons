@@ -51,6 +51,9 @@ function child(over: Partial<ChildRecord> & { id: string; firstName: string; las
     isDemo: false,
     createdAt: new Date(0),
     birthDate: "",
+    schoolClass: "",
+    phone: "",
+    email: "",
     ...over,
   };
 }

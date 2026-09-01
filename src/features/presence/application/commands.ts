@@ -298,7 +298,49 @@ export async function closeActivityDay(activityId: string, closedByUserId: strin
   await closeDay(activityId, now, closedByUserId, closedByName);
 }
 
-async function validateChildInput(input: Pick<NewChildRecordInput, "firstName" | "lastName" | "activityId">) {
+/** Optional profile details, validated the same way whether they arrive from
+ * the admin form or an Excel import — the form is not trusted more than the
+ * file. Sizes mirror the CHECK constraints on the children table so a bad
+ * value is reported in French rather than surfacing as a Postgres error. */
+interface ChildProfileInput {
+  schoolClass?: string;
+  birthDate?: string | null;
+  phone?: string;
+  email?: string;
+}
+
+function validateChildProfile(input: ChildProfileInput) {
+  if ((input.schoolClass ?? "").length > 40) {
+    throw new PresenceCommandError("Classe : 40 caractères maximum.");
+  }
+  if ((input.phone ?? "").length > 200) {
+    throw new PresenceCommandError("Téléphone : 200 caractères maximum.");
+  }
+  const email = (input.email ?? "").trim();
+  if (email.length > 300) {
+    throw new PresenceCommandError("E-mail : 300 caractères maximum.");
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new PresenceCommandError(`E-mail invalide : "${email}".`);
+  }
+  const birthDate = input.birthDate ?? "";
+  if (birthDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+      throw new PresenceCommandError("Date de naissance : format attendu AAAA-MM-JJ.");
+    }
+    const parsed = new Date(`${birthDate}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new PresenceCommandError("Date de naissance invalide.");
+    }
+    // A child cannot be born tomorrow. Not an age policy — just a typo guard
+    // that catches 2062 for 2026 without deciding how old a child may be.
+    if (parsed.getTime() > Date.now()) {
+      throw new PresenceCommandError("Date de naissance : la date ne peut pas être dans le futur.");
+    }
+  }
+}
+
+async function validateChildInput(input: Pick<NewChildRecordInput, "firstName" | "lastName" | "activityId"> & ChildProfileInput) {
   if (!input.firstName.trim() || !input.lastName.trim()) {
     throw new PresenceCommandError("Le prénom et le nom sont obligatoires.");
   }
@@ -306,6 +348,7 @@ async function validateChildInput(input: Pick<NewChildRecordInput, "firstName" |
   if (!activities.some((a) => a.id === input.activityId)) {
     throw new PresenceCommandError("Activité introuvable.");
   }
+  validateChildProfile(input);
 }
 
 export async function createChild(input: NewChildRecordInput): Promise<ChildRecord> {
@@ -323,6 +366,12 @@ export interface UpdateChildInput {
   activityId: string;
   daycareAuto: boolean;
   notes: string;
+  /** Optional so every existing caller keeps working: omitted means "leave
+   * untouched", not "clear" (see SupabaseChildUpdate). */
+  schoolClass?: string;
+  birthDate?: string;
+  phone?: string;
+  email?: string;
 }
 
 export async function updateChild(childId: string, input: UpdateChildInput): Promise<ChildRecord> {
