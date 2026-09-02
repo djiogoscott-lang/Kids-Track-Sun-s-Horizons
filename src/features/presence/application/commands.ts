@@ -473,9 +473,24 @@ export async function createAccount(
   if (!firstName.trim() || !lastName.trim()) throw new PresenceCommandError("Le prénom et le nom sont obligatoires.");
   assertValidPassword(password);
   if (await isMonitorEmailTaken(trimmedEmail)) throw new PresenceCommandError("Cette adresse e-mail est déjà utilisée.");
+  // A monitor's whole job is one activity: without one they sign in, land on
+  // "Votre activité n'est pas encore attribuée" and can do nothing at all.
+  // Creating such an account produced something that looked created and was
+  // in fact unusable, so the activity is required for MONITOR — enforced here,
+  // on the server, not only in the dialog.
+  if (role === "MONITOR" && !activityId) {
+    throw new PresenceCommandError("Une activité doit être attribuée à un moniteur.");
+  }
   if (activityId) {
+    // Scoped to the active school, so an activity id from another school is
+    // "introuvable" rather than assignable.
     const activities = await getActivitiesList();
-    if (!activities.some((a) => a.id === activityId)) throw new PresenceCommandError("Activité introuvable.");
+    const activity = activities.find((a) => a.id === activityId);
+    if (!activity) throw new PresenceCommandError("Activité introuvable.");
+    if (!activity.active) throw new PresenceCommandError(`L'activité "${activity.name}" est désactivée.`);
+    if (activity.monitorId) {
+      throw new PresenceCommandError(`L'activité "${activity.name}" est déjà attribuée à un moniteur. Retirez-le d'abord.`);
+    }
   }
   const fullName = `${firstName.trim()} ${lastName.trim()}`;
   return createAccountRecord(trimmedEmail, password, fullName, role, activityId);

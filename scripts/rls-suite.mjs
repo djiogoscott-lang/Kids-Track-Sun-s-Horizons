@@ -564,6 +564,60 @@ async function main() {
     check("super admin: the in-transaction school left no trace", noTestOrg.rows[0].n === 0, `got ${noTestOrg.rows[0].n}`);
   }
 
+  // -------------------------------------------------------------------
+  // 9. The four monitor-access rules, on real UUIDs, in one rolled-back
+  //    transaction. A second school and a second activity are created inside
+  //    it so "foreign school" and "foreign activity" are real claims even
+  //    when production holds a single school.
+  // -------------------------------------------------------------------
+  {
+    await client.query("begin");
+    try {
+      const ownOrg = admin.organization_id;
+      const ownAct = (
+        await client.query("insert into activities (organization_id, name) values ($1,'RLS_TX_ONLY_own') returning id", [ownOrg])
+      ).rows[0];
+      const otherOrg = (await client.query("insert into organizations (name) values ('RLS_TX_ONLY_orgB') returning id")).rows[0];
+      const otherAct = (
+        await client.query("insert into activities (organization_id, name) values ($1,'RLS_TX_ONLY_foreign') returning id", [otherOrg.id])
+      ).rows[0];
+
+      // A monitor of this school, holding ownAct and nothing else.
+      const subject = memberships.find((m) => m.role === "MONITOR" && !m.revoked_at);
+      await client.query("update activities set monitor_id = $1 where id = $2", [subject.user_id, ownAct.id]);
+
+      await client.query("select set_config('role', 'authenticated', true)");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [claim(subject.user_id)]);
+
+      const seen = (await client.query("select id::text from activities")).rows.map((r) => r.id);
+      check("monitor + assigned activity: sees exactly that activity", seen.length === 1 && seen[0] === ownAct.id, `got ${JSON.stringify(seen)}`);
+      check(
+        "monitor + foreign activity (same school): denied by UUID",
+        (await client.query("select id from activities where id = $1", [anyActivity.id])).rows.length === 0,
+      );
+      check(
+        "monitor + another school's activity: denied by UUID",
+        (await client.query("select id from activities where id = $1", [otherAct.id])).rows.length === 0,
+      );
+      check(
+        "monitor + another school: that school is invisible",
+        (await client.query("select id from organizations where id = $1", [otherOrg.id])).rows.length === 0,
+      );
+
+      // Same monitor, assignment removed: no activity at all, not "some".
+      await client.query("select set_config('role', 'postgres', true)");
+      await client.query("update activities set monitor_id = null where id = $1", [ownAct.id]);
+      await client.query("select set_config('role', 'authenticated', true)");
+      check(
+        "monitor without any activity: sees none",
+        (await client.query("select id from activities")).rows.length === 0,
+        `got ${(await client.query("select id from activities")).rows.length}`,
+      );
+    } finally {
+      await client.query("rollback");
+    }
+  }
+
   const monitorAfter = JSON.stringify((await client.query("select id::text, monitor_id::text from activities order by id")).rows);
   check(
     "suite: every activity's monitor assignment is byte-identical to before the run",

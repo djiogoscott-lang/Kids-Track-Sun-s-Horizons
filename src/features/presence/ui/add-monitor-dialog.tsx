@@ -140,19 +140,23 @@ export function AddMonitorDialog({ activities }: { activities: ActivityRecord[] 
               </label>
               {role === "MONITOR" ? (
                 <label className="block text-sm font-semibold">
-                  Activité (facultatif)
+                  Activité <span className="text-[var(--danger)]">*</span>
                   <select
                     value={activityId}
                     onChange={(e) => setActivityId(e.target.value)}
+                    required
                     className="mt-1.5 h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3.5"
                   >
-                    <option value="">Aucune pour l&apos;instant</option>
+                    <option value="">— Choisir une activité —</option>
                     {activities.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
                       </option>
                     ))}
                   </select>
+                  <span className="mt-1 block text-xs font-normal text-[var(--muted)]">
+                    Un moniteur gère exactement une activité. Sans elle, le compte se connecte mais ne peut rien faire.
+                  </span>
                 </label>
               ) : null}
 
@@ -161,7 +165,10 @@ export function AddMonitorDialog({ activities }: { activities: ActivityRecord[] 
               <div className="flex gap-2">
                 <button
                   type="button"
-                  disabled={isPending}
+                  // A monitor with no activity is a broken account, so the
+                  // button refuses rather than letting the server reject it
+                  // after the admin has typed a password.
+                  disabled={isPending || (role === "MONITOR" && !activityId)}
                   onClick={submit}
                   className="tap-scale h-12 flex-1 rounded-xl bg-[var(--foreground)] text-sm font-bold text-white disabled:opacity-50"
                 >
