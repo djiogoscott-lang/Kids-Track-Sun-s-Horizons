@@ -118,6 +118,15 @@ async function main() {
   const totalByActivity = {};
   for (const c of allChildrenAnyStatus) totalByActivity[c.activity_id] = (totalByActivity[c.activity_id] ?? 0) + 1;
 
+  // Snapshot of every real monitor assignment, taken before the suite runs a
+  // single thing and compared again at the very end. This suite is read-only
+  // by contract; the assertion makes that contract enforced rather than
+  // assumed, after a real assignment was found changed three times with
+  // timestamps matching runs of this file.
+  const monitorSnapshot = JSON.stringify(
+    (await client.query("select id::text, monitor_id::text from activities order by id")).rows,
+  );
+
   console.log("=== Kids Track — RLS reference suite ===");
   console.log(`Activities: ${activities.map((a) => `${a.name}=${monitorEmailOf(a.monitor_id)}`).join(", ")}\n`);
 
@@ -554,6 +563,13 @@ async function main() {
     const noTestOrg = await client.query("select count(*)::int n from organizations where name = 'RLS_TX_ONLY_school'");
     check("super admin: the in-transaction school left no trace", noTestOrg.rows[0].n === 0, `got ${noTestOrg.rows[0].n}`);
   }
+
+  const monitorAfter = JSON.stringify((await client.query("select id::text, monitor_id::text from activities order by id")).rows);
+  check(
+    "suite: every activity's monitor assignment is byte-identical to before the run",
+    monitorAfter === monitorSnapshot,
+    monitorAfter === monitorSnapshot ? "" : `AVANT ${monitorSnapshot} / APRES ${monitorAfter}`,
+  );
 
   await client.end();
 
