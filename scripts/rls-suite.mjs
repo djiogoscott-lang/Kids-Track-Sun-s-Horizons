@@ -583,7 +583,11 @@ async function main() {
       ).rows[0];
 
       // A monitor of this school, holding ownAct and nothing else.
-      const subject = memberships.find((m) => m.role === "MONITOR" && !m.revoked_at);
+      // Must be a monitor holding NO activity: activities carries a unique
+      // (organization_id, monitor_id) index, so borrowing one who already has
+      // an activity makes the insert below fail on that constraint.
+      const subject = memberships.find((m) => m.role === "MONITOR" && !m.revoked_at && !activities.some((a) => a.monitor_id === m.user_id));
+      if (!subject) { await client.query("rollback"); throw new Error("no unassigned monitor for the access-rule test"); }
       await client.query("update activities set monitor_id = $1 where id = $2", [subject.user_id, ownAct.id]);
 
       await client.query("select set_config('role', 'authenticated', true)");

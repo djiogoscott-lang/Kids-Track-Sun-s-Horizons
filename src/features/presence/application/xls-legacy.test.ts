@@ -249,3 +249,26 @@ describe("the school's real workbook shape, read from .xls", () => {
     expect(rows.filter((r) => r.garderie === "Oui")).toHaveLength(75);
   });
 });
+
+describe("a surname typed with a stray lowercase run", () => {
+  it("does not invert 'CAMPOLEoni Guido' into first CAMPOLEoni / last Guido", async () => {
+    // Real row from the NDC primary list. The all-caps test used to fail on
+    // this token, so the splitter fell back to "last token is the surname"
+    // and the child was registered back to front.
+    const workbook = await loadWorkbook(
+      "liste.xls",
+      buildRealShapedWorkbook({ rows: [["7", "CAMPOLEoni Guido", "2A", new Date(Date.UTC(2019, 7, 5)), "X", "", "", "", ""]] }),
+    );
+    const { rows } = parseLikeTheRoute(workbook, "Primaire NDC");
+    expect(rows[0]).toMatchObject({ lastName: "CAMPOLEoni", firstName: "Guido" });
+  });
+
+  it("still treats an ordinary given name as a given name", async () => {
+    const workbook = await loadWorkbook(
+      "liste.xls",
+      buildRealShapedWorkbook({ rows: [["1", "Gabriella Verstraete", "1A", new Date(Date.UTC(2020, 0, 1)), "", "", "", "", ""]] }),
+    );
+    const { rows } = parseLikeTheRoute(workbook, "Primaire NDC");
+    expect(rows[0]).toMatchObject({ lastName: "Verstraete", firstName: "Gabriella" });
+  });
+});

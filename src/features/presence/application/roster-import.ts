@@ -223,9 +223,21 @@ export function splitFullName(fullName: string): { firstName: string; lastName: 
   const tokens = cleaned.split(" ");
   if (tokens.length < 2) return null;
 
+  // "Mostly capitals", not "all capitals". Real lists contain surnames typed
+  // with a stray lowercase run — "CAMPOLEoni Guido" — and requiring a perfect
+  // all-caps token made the splitter see no surname prefix at all, fall back
+  // to "last token is the surname", and register the child as
+  // firstName "CAMPOLEoni" / lastName "Guido": the name inverted.
+  //
+  // Two capitals minimum and a clear majority of them keeps ordinary given
+  // names out ("Guido" is 1 of 5, "Léonard" 1 of 7) while accepting a surname
+  // the secretary shift-keyed imperfectly.
   const isUpper = (t: string) => {
     const letters = t.replace(/[^\p{L}]/gu, "");
-    return letters.length > 0 && letters === letters.toUpperCase();
+    if (letters.length === 0) return false;
+    if (letters === letters.toUpperCase()) return true;
+    const caps = [...letters].filter((ch) => ch === ch.toUpperCase() && ch !== ch.toLowerCase()).length;
+    return caps >= 2 && caps / letters.length >= 0.6;
   };
 
   let i = 0;
