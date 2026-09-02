@@ -101,7 +101,6 @@ async function main() {
   );
   const adminActivities = activities.filter((a) => adminSchoolIds.has(a.organization_id));
   const foreignActivities = activities.filter((a) => !adminSchoolIds.has(a.organization_id));
-  const monitorByEmail = Object.fromEntries(memberships.filter((m) => m.role === "MONITOR").map((m) => [m.email, m]));
 
   const { rows: activeChildren } = await client.query("select id, activity_id, organization_id from children where active");
   const countByActivity = {};
@@ -427,18 +426,35 @@ async function main() {
   //    running against a different school) cannot break this test.
   // -------------------------------------------------------------------
   {
-    const borrowed = activities[0];
-    const testSubject = unassignedMonitor ?? Object.values(monitorByEmail)[0];
-    await client.query("begin");
-    try {
-      await client.query("update activities set monitor_id = $1 where id = $2", [testSubject.user_id, borrowed.id]);
-      await client.query("update organization_memberships set revoked_at = now() where user_id = $1", [testSubject.user_id]);
-      await client.query("select set_config('role', 'authenticated', true)");
-      await client.query("select set_config('request.jwt.claims', $1, true)", [claim(testSubject.user_id)]);
-      const acts = await client.query("select id from activities where id = $1", [borrowed.id]);
-      check("revoked monitor: denied access despite matching monitor_id", acts.rows.length === 0, `got ${acts.rows.length}`);
-    } finally {
-      await client.query("rollback");
+    // Uses an activity's OWN monitor rather than borrowing an activity and
+    // reassigning it. The borrow wrote to activities.monitor_id — a real
+    // assignment — inside a transaction that was supposed to roll it back,
+    // and the real assignment was found changed three times over this work
+    // with updated_at matching runs of this suite. Whether or not the
+    // rollback was at fault, a read-only regression test has no business
+    // writing to that column at all, so the write is gone: revoke the
+    // monitor who already holds an activity and check they lose it.
+    const assigned = activities.find((a) => a.monitor_id);
+    if (!assigned) {
+      console.log("  (skipped revoked-monitor check — no activity has a monitor)");
+    } else {
+      await client.query("begin");
+      try {
+        await client.query("update organization_memberships set revoked_at = now() where user_id = $1", [assigned.monitor_id]);
+        await client.query("select set_config('role', 'authenticated', true)");
+        await client.query("select set_config('request.jwt.claims', $1, true)", [claim(assigned.monitor_id)]);
+        const acts = await client.query("select id from activities where id = $1", [assigned.id]);
+        check("revoked monitor: denied access despite matching monitor_id", acts.rows.length === 0, `got ${acts.rows.length}`);
+      } finally {
+        await client.query("rollback");
+      }
+      // The assignment this suite reads must be exactly what it was.
+      const after = await client.query("select monitor_id::text from activities where id = $1", [assigned.id]);
+      check(
+        "suite: left every activity's monitor assignment untouched",
+        after.rows[0].monitor_id === assigned.monitor_id,
+        `got ${after.rows[0].monitor_id}, expected ${assigned.monitor_id}`,
+      );
     }
   }
 
